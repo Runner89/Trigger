@@ -149,6 +149,13 @@ def close_open_position(api_key, secret_key, symbol, position_side="LONG"):
     logs.append(f"Schließen der Position: {result}")
     return {"result": result, "logs": logs}
 
+def get_position_info(api_key, secret_key, symbol, position_side):
+    response = get_positions(api_key, secret_key)  # oder die passende API-Funktion
+    for pos in response['data']:
+        if pos['symbol'] == symbol and pos['positionSide'] == position_side:
+            return pos
+    return None
+
 def place_market_order(api_key, secret_key, symbol, usdt_amount, position_side="LONG"):
     price = get_current_price(symbol)
     if price is None:
@@ -1149,7 +1156,18 @@ def webhook():
                         sende_telegram_nachricht(botname, f"❌ Fehler beim Lesen der Ordergröße aus Firebase {botname}: {e}")
         
             # 4. Market-Order ausführen
-            # 4. Market-Order ausführen
+            # 1. Funktion, um Positionsinfos zu holen
+            def get_position_info(api_key, secret_key, symbol, position_side):
+                try:
+                    response = get_positions(api_key, secret_key)  # API-Aufruf, der alle Positionen zurückgibt
+                    for pos in response['data']:
+                        if pos['symbol'] == symbol and pos['positionSide'] == position_side:
+                            return pos
+                except Exception as e:
+                    logs.append(f"Fehler beim Abrufen der Positionsinfos: {e}")
+                return None
+            
+            # 2. Market-Order ausführen
             try:
                 logs.append(f"Plaziere Market-Order mit {usdt_amount} USDT für {symbol} ({position_side})...")
                 order_response = place_market_order(api_key, secret_key, symbol, float(usdt_amount), position_side)
@@ -1159,29 +1177,29 @@ def webhook():
                 logs.append(f"Market-Order Antwort: {order_response}")
             
                 # --- NEU: Trigger-Market-Order direkt nach Marketorder ---
-                trigger_price = 0.002970  # gewünschter Trigger-Preis
+                trigger_price = 0.00297  # gewünschter Trigger-Preis
             
-                # verfügbare Positionsmenge abfragen
+                # verfügbare Menge abfragen
                 position_info = get_position_info(api_key, secret_key, symbol, position_side)
-                available_qty = float(position_info['availableAmt'])
-            
-                # Menge für Trigger-Order auf verfügbare Menge begrenzen
-                trigger_qty = min(available_qty, float(usdt_amount) / trigger_price)  
-            
-                if trigger_qty > 0:
-                    trigger_response = place_trigger_market_order(
-                        api_key=api_key,
-                        secret_key=secret_key,
-                        symbol=symbol,
-                        trigger_price=trigger_price,
-                        quantity=trigger_qty,
-                        position_side=position_side
-                    )
-                    logs.append(f"Trigger-Market-Order erstellt: {trigger_response}")
+                if position_info:
+                    available_qty = float(position_info['availableAmt'])
+                    trigger_qty = min(available_qty, float(usdt_amount) / trigger_price)  # Menge auf verfügbare Position begrenzen
+                    if trigger_qty > 0:
+                        trigger_response = place_trigger_market_order(
+                            api_key=api_key,
+                            secret_key=secret_key,
+                            symbol=symbol,
+                            trigger_price=trigger_price,
+                            quantity=trigger_qty,
+                            position_side=position_side
+                        )
+                        logs.append(f"Trigger-Market-Order erstellt: {trigger_response}")
+                    else:
+                        logs.append("Trigger-Market-Order konnte nicht gesetzt werden: keine verfügbare Menge")
                 else:
-                    logs.append("Trigger-Market-Order konnte nicht gesetzt werden: keine verfügbare Menge")
+                    logs.append("Keine Positionsinfos verfügbar, Trigger-Order übersprungen")
             
-                # API-Antwort prüfen
+                # Marketorder auf Fehler prüfen
                 if not order_response or order_response.get("code") != 0:
                     status_fuer_alle[botname] = "Fehler"
                     logs.append(order_response)
@@ -1191,6 +1209,7 @@ def webhook():
                 logs.append(f"Fehler bei Marketorder: {e}")
                 status_fuer_alle[botname] = "Fehler"
                 sende_telegram_nachricht(botname, f"❌❌❌ Marketorder konnte nicht gesetzt werden für Bot: {botname}")
+
 
     
             # 5. Positionsgröße und Liquidationspreis ermitteln
