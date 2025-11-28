@@ -35,7 +35,7 @@ def place_trigger_order(api_key, secret_key, symbol, usdt_amount, trigger_price)
 
     # Alphabetisch sortieren, Query-String erstellen
     query_string = "&".join(f"{k}={params_dict[k]}" for k in sorted(params_dict))
-    signature = generate_signature(secret_key, query_string)
+    signature = hmac.new(secret_key.encode(), query_string.encode(), hashlib.sha256).hexdigest()
     params_dict["signature"] = signature
 
     url = f"{BASE_URL}{ORDER_ENDPOINT}"
