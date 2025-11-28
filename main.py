@@ -12,17 +12,19 @@ ORDER_ENDPOINT = "/openApi/swap/v2/trade/order"
 def generate_signature(secret_key: str, params: str) -> str:
     return hmac.new(secret_key.encode(), params.encode(), hashlib.sha256).hexdigest()
 
-def place_market_order(api_key, secret_key, symbol, usdt_amount, trigger_price):
+def place_trigger_order(api_key, secret_key, symbol, usdt_amount, trigger_price):
     # Menge berechnen und auf ganze Tokens runden
     quantity = int(usdt_amount / trigger_price)
     timestamp = int(time.time() * 1000)
 
+    # Stop-Market (Trigger) Order
     params_dict = {
         "symbol": symbol,
-        "side": "BUY",
-        "type": "MARKET",
+        "side": "BUY",                # Kaufsignal
+        "type": "STOP_MARKET",        # Trigger-Market-Order
         "quantity": quantity,
         "positionSide": "LONG",
+        "stopPrice": trigger_price,   # Trigger-Preis
         "timestamp": timestamp
     }
 
@@ -48,10 +50,10 @@ def webhook():
     if not api_key or not secret_key or not symbol:
         return jsonify({"error": True, "msg": "api_key, secret_key und symbol sind erforderlich"}), 400
 
-    order_response = place_market_order(api_key, secret_key, symbol, usdt_amount, trigger_price)
+    order_response = place_trigger_order(api_key, secret_key, symbol, usdt_amount, trigger_price)
 
     return jsonify({
-        "status": "order_placed",
+        "status": "trigger_order_placed",
         "symbol": symbol,
         "trigger_price": trigger_price,
         "usdt_amount": usdt_amount,
