@@ -207,42 +207,34 @@ def place_stop_loss_order(api_key, secret_key, symbol, quantity, stop_price, pos
     return response.json()
 
 def place_trigger_market_order(api_key, secret_key, symbol, trigger_price, usdt_amount, position_side="LONG"):
+    price = get_current_price(symbol)
+    if not price:
+        return {"code": -1, "msg": "Aktueller Preis konnte nicht abgerufen werden"}
     
-    #Erstellt eine Trigger-Market-Order auf BingX.
-    #Die Order wird erst ausgelöst, wenn der Trigger-Preis erreicht wird.
+    # Menge berechnen
+    quantity = round(usdt_amount / price, 6)
     
-    # Berechne die Menge anhand des USDT-Betrags
-    current_price = get_current_price(symbol)
-    if current_price is None:
-        return {"code": 99999, "msg": "Failed to get current price"}
-    
-    quantity = round(usdt_amount / current_price, 6)
-
     timestamp = int(time.time() * 1000)
-    
     params_dict = {
         "symbol": symbol,
-        "side": "BUY",  # oder SELL je nach Bedarf
-        "type": "TRIGGER_MARKET",
-        "triggerPrice": round(trigger_price, 6),
+        "side": "BUY" if position_side.upper() == "LONG" else "SELL",
+        "type": "STOP_MARKET",     # Trigger-Market
+        "stopPrice": round(trigger_price, 6),   # Trigger-Preis
         "quantity": quantity,
         "positionSide": position_side.upper(),
-        "timestamp": timestamp
+        "timestamp": timestamp,
+        "timeInForce": "GTC"
     }
 
-    # Signatur erstellen
     query_string = "&".join(f"{k}={params_dict[k]}" for k in sorted(params_dict))
-    signature = hmac.new(secret_key.encode(), query_string.encode(), hashlib.sha256).hexdigest()
+    signature = generate_signature(secret_key, query_string)
     params_dict["signature"] = signature
 
     url = f"{BASE_URL}{ORDER_ENDPOINT}"
-    headers = {
-        "X-BX-APIKEY": api_key,
-        "Content-Type": "application/json"
-    }
-
+    headers = {"X-BX-APIKEY": api_key, "Content-Type": "application/json"}
     response = requests.post(url, headers=headers, json=params_dict)
     return response.json()
+
 
 
 def send_signed_request(http_method, endpoint, api_key, secret_key, params=None):
