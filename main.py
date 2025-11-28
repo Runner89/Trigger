@@ -180,24 +180,20 @@ def place_market_order(api_key, secret_key, symbol, usdt_amount, position_side="
     return response.json()
 
 def place_trigger_order(api_key, secret_key, symbol, trigger_price, quantity, position_side="LONG"):
-   
-    # Setzt eine Triggerorder (Stop/Trigger) auf BingX Perpetual Futures.
-    
-
     timestamp = int(time.time() * 1000)
 
     params_dict = {
-        "symbol":    symbol,
-        "side":      "SELL" if position_side.upper() == "LONG" else "BUY",
-        "type":      "STOP_MARKET",     # wichtig: BingX benötigt STOP_MARKET
-        "triggerPrice": trigger_price,  # Auslösepreis
-        "triggerType": "LE",            # LE = Last Price
-        "quantity":  quantity,
+        "symbol": symbol,
+        "side": "SELL" if position_side.upper() == "LONG" else "BUY",
+        "type": "STOP_MARKET",
+        "triggerPrice": trigger_price,
+        "triggerType": "LE",  # LE = Last Price Trigger, je nach API
+        "quantity": quantity,
         "positionSide": position_side.upper(),
+        "timeInForce": "GTC",
         "timestamp": timestamp
     }
 
-    # Signatur erstellen
     query_string = "&".join(f"{k}={params_dict[k]}" for k in sorted(params_dict))
     signature = generate_signature(secret_key, query_string)
     params_dict["signature"] = signature
@@ -210,6 +206,7 @@ def place_trigger_order(api_key, secret_key, symbol, trigger_price, quantity, po
 
     response = requests.post(url, headers=headers, json=params_dict)
     return response.json()
+
 
 def place_stop_loss_order(api_key, secret_key, symbol, quantity, stop_price, position_side="LONG"):
     timestamp = int(time.time() * 1000)
@@ -1170,36 +1167,11 @@ def webhook():
                 sende_telegram_nachricht(botname, f"❌❌❌ Marketorder konnte nicht gesetzt werden für Bot: {botname}")
 
             # ---- SO Triggerorder direkt nach Marketorder setzen ----
-                # Beispiel: SO = 1.5 für 1.5% unterhalb
-              
+            trigger_price = round(market_avg_price * (1 - SO/100), 6)
+            trigger_qty = executed_qty
             
-            market = place_market_order(api_key, secret_key, symbol, usdt_amount, position_side)
-            
-            # Wenn Marketorder erfolgreich war
-            if "orderId" in market:
-                
-                # 1️⃣ Baseorder-Entry-Preis ermitteln
-                entry_price = get_current_price(symbol)
-                
-                # 2️⃣ Triggerpreis berechnen
-                trigger_price = round(entry_price * (1 - SO / 100), 4)
-                
-                # 3️⃣ Menge identisch wie Marketorder (du kannst auch eigene Menge nutzen)
-                quantity = round(usdt_amount / entry_price, 6)
-            
-                # 4️⃣ Triggerorder senden
-                trigger = place_trigger_order(
-                    api_key,
-                    secret_key,
-                    symbol,
-                    trigger_price,
-                    quantity,
-                    position_side
-                )
-            
-                print("Trigger-Order gesetzt:", trigger)
-            else:
-                print("Marketorder fehlgeschlagen:", market)
+            trigger_response = place_trigger_order(api_key, secret_key, symbol, trigger_price, trigger_qty, position_side)
+            print("Triggerorder Antwort:", trigger_response)
 
 
 
