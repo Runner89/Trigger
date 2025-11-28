@@ -179,6 +179,38 @@ def place_market_order(api_key, secret_key, symbol, usdt_amount, position_side="
     response = requests.post(url, headers=headers, json=params_dict)
     return response.json()
 
+def place_trigger_order(api_key, secret_key, symbol, trigger_price, quantity, position_side="LONG"):
+   
+    # Setzt eine Triggerorder (Stop/Trigger) auf BingX Perpetual Futures.
+    
+
+    timestamp = int(time.time() * 1000)
+
+    params_dict = {
+        "symbol":    symbol,
+        "side":      "SELL" if position_side.upper() == "LONG" else "BUY",
+        "type":      "STOP_MARKET",     # wichtig: BingX benötigt STOP_MARKET
+        "triggerPrice": trigger_price,  # Auslösepreis
+        "triggerType": "LE",            # LE = Last Price
+        "quantity":  quantity,
+        "positionSide": position_side.upper(),
+        "timestamp": timestamp
+    }
+
+    # Signatur erstellen
+    query_string = "&".join(f"{k}={params_dict[k]}" for k in sorted(params_dict))
+    signature = generate_signature(secret_key, query_string)
+    params_dict["signature"] = signature
+
+    url = f"{BASE_URL}{ORDER_ENDPOINT}"
+    headers = {
+        "X-BX-APIKEY": api_key,
+        "Content-Type": "application/json"
+    }
+
+    response = requests.post(url, headers=headers, json=params_dict)
+    return response.json()
+
 def place_stop_loss_order(api_key, secret_key, symbol, quantity, stop_price, position_side="LONG"):
     timestamp = int(time.time() * 1000)
 
@@ -918,6 +950,7 @@ def webhook():
         sell_percentage2 = data.get("RENDER", {}).get("sell_percentage2")
         beenden = data.get("RENDER", {}).get("beenden", "nein")
         sl = data.get("RENDER", {}).get("sl")
+        SO = float(webhook["RENDER"]["SO"])
 
        # Check: Offene SHORT-Position
         # ------------------------------
@@ -1137,53 +1170,38 @@ def webhook():
                 sende_telegram_nachricht(botname, f"❌❌❌ Marketorder konnte nicht gesetzt werden für Bot: {botname}")
 
             # ---- SO Triggerorder direkt nach Marketorder setzen ----
-            try:
-                so_percentage = float(data.get("RENDER", {}).get("SO", 0))
+                # Beispiel: SO = 1.5 für 1.5% unterhalb
+              
             
-                if so_percentage > 0 and price_from_webhook:
+            market = place_market_order(api_key, secret_key, symbol, usdt_amount, position_side)
             
-                    # Base-Order USDT
-                    base_usdt = saved_usdt_amounts.get(botname, 0)
+            # Wenn Marketorder erfolgreich war
+            if "orderId" in market:
+                
+                # 1️⃣ Baseorder-Entry-Preis ermitteln
+                entry_price = get_current_price(symbol)
+                
+                # 2️⃣ Triggerpreis berechnen
+                trigger_price = round(entry_price * (1 - SO / 100), 4)
+                
+                # 3️⃣ Menge identisch wie Marketorder (du kannst auch eigene Menge nutzen)
+                quantity = round(usdt_amount / entry_price, 6)
             
-                    # Positionsgröße = Base USDT * usdt_factor
-                    trigger_usdt_amount = base_usdt * usdt_factor
+                # 4️⃣ Triggerorder senden
+                trigger = place_trigger_order(
+                    api_key,
+                    secret_key,
+                    symbol,
+                    trigger_price,
+                    quantity,
+                    position_side
+                )
             
-                    logs.append(f"SO Trigger aktiv. Trigger USDT: {trigger_usdt_amount}")
-            
-                    current_price = float(price_from_webhook)
-            
-                    # Preis für die Triggerorder SO % unter dem Kaufpreis
-                    trigger_price = round(current_price * (1 - so_percentage / 100), 6)
-            
-                    logs.append(f"Triggerpreis = {trigger_price} (SO = -{so_percentage}%)")
-            
-                    # ---- WICHTIG: BingX TRIGGER-MARKET ORDER (keine STOPMARKET!) ----
-                    trigger_response = bingx_futures_request(
-                        api_key=api_key,
-                        secret_key=secret_key,
-                        method="POST",
-                        endpoint="/trade/order",
-                        data={
-                            "symbol": symbol,
-                            "side": "BUY" if position_side.upper() == "LONG" else "SELL",
-                            "type": "MARKET",              # <-- keine STOPMARKET!
-                            "triggerPrice": trigger_price, # <-- Trigger Preis
-                            "triggerType": "LE",           # LE = Preis fällt & löst aus
-                            "quantity": trigger_usdt_amount,
-                            "positionSide": position_side.upper()
-                        }
-                    )
-            
-                    logs.append(f"SO Trigger-Marketorder gesetzt: {trigger_response}")
-            
-                else:
-                    logs.append("SO nicht gesetzt oder kein Preis verfügbar – Triggerorder übersprungen.")
-            
-            except Exception as e:
-                logs.append(f"Fehler bei SO Triggerorder: {e}")
-                sende_telegram_nachricht(botname, f"❌ Fehler bei SO Triggerorder: {e}")
+                print("Trigger-Order gesetzt:", trigger)
+            else:
+                print("Marketorder fehlgeschlagen:", market)
 
-    
+
 
         
                 
