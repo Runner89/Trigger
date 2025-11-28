@@ -807,6 +807,8 @@ def webhook():
                     logs.append(f"Trigger-Marketorder erfolgreich platziert: OrderID={order_id}")
                 else:
                     logs.append(f"Fehler beim Platzieren der Trigger-Marketorder: {trigger_response.get('msg')}")
+            except Exception as e:
+                logs.append(f"Exception beim Platzieren der Trigger-Marketorder: {str(e)}")
 
 
 
