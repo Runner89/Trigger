@@ -17,19 +17,20 @@ def place_trigger_order(api_key, secret_key, symbol, usdt_amount, trigger_price)
     quantity = int(usdt_amount / trigger_price)
     timestamp = int(time.time() * 1000)
 
+    # Parameter für STOP_MARKET Order
     params_dict = {
         "symbol": symbol,
-        "side": "BUY",               # LONG Entry
-        "type": "STOP_MARKET",       # Trigger Order
-        "quantity": quantity,
+        "side": "BUY",
+        "type": "STOP_MARKET",         # Trigger Order
+        "quantity": str(quantity),     # String statt int
         "positionSide": "LONG",
-        "reduceOnly": False,         # Entry Order, nicht zum Schließen
-        "stopPrice": trigger_price,  # Trigger Price
-        "workingType": "MARK_PRICE", # Oder "CONTRACT_PRICE"
-        "timestamp": timestamp
+        "reduceOnly": "false",         # lowercase string
+        "stopPrice": str(trigger_price),
+        "workingType": "MARK_PRICE",
+        "timestamp": str(timestamp)
     }
 
-    # Signatur erstellen
+    # Query-String alphabetisch sortiert
     query_string = "&".join(f"{k}={params_dict[k]}" for k in sorted(params_dict))
     signature = generate_signature(secret_key, query_string)
     params_dict["signature"] = signature
