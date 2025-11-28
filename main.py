@@ -47,8 +47,8 @@ def webhook():
     data = request.json
 
     # DEINE Keys
-    api_key = "HCMkr3dg22Hepo9iJWEABqptvDmEmsJBOB0Gr5MptJMuk0a8dl4p7zFCOkdpVGb2AcwDwXaCLA2Go4X0h2g"
-    secret_key = "xhnk9SG2t8dDxjae7UbUaicE8iQrbrUTUaJ6GZXnxMzsbaT3aabL90EeuqMCBLs5UBiKaTgQRyItWOKjesF0A"
+    api_key = ""
+    secret_key = ""
 
     symbol = data.get("symbol", "PUMP-USDT")
     trigger_price = data.get("trigger_price")
