@@ -439,6 +439,22 @@ def place_increase_order_trigger(api_key, secret_key, symbol, quantity, trigger_
         "timeInForce": "GTC"
     }
 
+def place_stop_market_order(api_key, secret_key, symbol, quantity, position_side, stop_price, reduce_only=False):
+    # Hier die API-Aufruf-Logik einfügen, z.B. POST zu Binance/Futures
+    payload = {
+        "symbol": symbol,
+        "side": "SELL" if position_side == "LONG" else "BUY",
+        "type": "STOP_MARKET",
+        "quantity": quantity,
+        "stopPrice": stop_price,
+        "reduceOnly": reduce_only,
+        "positionSide": position_side
+    }
+    # API-Aufruf hier...
+    # return { "code": 0, "data": {"order": { ... }}}
+    pass
+
+
     query_string = "&".join(f"{k}={params_dict[k]}" for k in sorted(params_dict))
     signature = generate_signature(secret_key, query_string)
     params_dict["signature"] = signature
