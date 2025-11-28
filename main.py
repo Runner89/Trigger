@@ -1180,9 +1180,13 @@ def webhook():
             
                     # Prüfen, ob deine API Trigger-Marketorders unterstützt
                     if hasattr(api_module, "place_trigger_market_order"):
-                        trigger_order_resp = place_trigger_market_order(
-                            api_key, secret_key, symbol, trigger_usdt_amount, trigger_price, position_side
-                        )
+                        trigger_order_resp = client.place_trigger_market_order(
+                        symbol="PUMP-USDT",
+                        quantity=trigger_usdt_amount,
+                        triggerPrice=trigger_price,
+                        side="SELL",
+                        positionSide="LONG")
+
                         logs.append(f"Trigger-Marketorder Response: {trigger_order_resp}")
                     else:
                         logs.append("Trigger-Marketorder nicht gesetzt – API unterstützt keine Triggerorders")
