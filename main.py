@@ -13,30 +13,34 @@ def generate_signature(secret_key: str, params: str) -> str:
     return hmac.new(secret_key.encode(), params.encode(), hashlib.sha256).hexdigest()
 
 def place_trigger_order(api_key, secret_key, symbol, usdt_amount, trigger_price):
-    # Menge berechnen und auf ganze Tokens runden
-    quantity = int(usdt_amount / trigger_price)
+    # Mindestmenge für das Symbol (z. B. aus vorheriger Fehlermeldung)
+    MIN_QTY = 584  
+
+    # Menge berechnen und Mindestmenge beachten
+    quantity = max(int(usdt_amount / trigger_price), MIN_QTY)
+
     timestamp = int(time.time() * 1000)
 
     params_dict = {
         "symbol": symbol,
         "side": "BUY",
-        "type": "STOP_MARKET",
-        "quantity": str(quantity),
+        "type": "STOP_MARKET",       # Trigger Order Typ
         "positionSide": "LONG",
-        "stopPrice": str(trigger_price),
-        "timeInForce": "GTC",
+        "quantity": quantity,
+        "stopPrice": trigger_price,  # Trigger-Preis
         "workingType": "MARK_PRICE",
-        "reduceOnly": "false",
-        "timestamp": str(timestamp)
+        "reduceOnly": False,
+        "timestamp": timestamp
     }
 
-    # Alphabetisch sortieren für Signatur
+    # Alphabetisch sortieren, Query-String erstellen
     query_string = "&".join(f"{k}={params_dict[k]}" for k in sorted(params_dict))
     signature = generate_signature(secret_key, query_string)
     params_dict["signature"] = signature
 
     url = f"{BASE_URL}{ORDER_ENDPOINT}"
     headers = {"X-BX-APIKEY": api_key, "Content-Type": "application/json"}
+
     response = requests.post(url, headers=headers, json=params_dict)
     return response.json()
 
