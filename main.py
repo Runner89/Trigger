@@ -788,9 +788,9 @@ def webhook():
                 logs.append(f"Trigger-Marketorder geplant: Preis={trigger_price:.6f}, Menge={trigger_quantity:.6f} Coins (~{trigger_order_usdt:.6f} USDT)")
             
                 # Margin prüfen
-                if trigger_order_usdt > usdt_balance_before_order:
-                    logs.append(f"Fehler: Nicht genügend USDT für Trigger-Order. Benötigt: {trigger_order_usdt:.6f}, Verfügbar: {usdt_balance_before_order:.6f}")
-                else:
+                #if trigger_order_usdt > usdt_balance_before_order:
+                #    logs.append(f"Fehler: Nicht genügend USDT für Trigger-Order. Benötigt: {trigger_order_usdt:.6f}, Verfügbar: {usdt_balance_before_order:.6f}")
+                #else:
                     # Trigger-Market-Order platzieren
                     trigger_response = place_stop_market_order(
                         api_key=api_key,
