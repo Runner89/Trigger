@@ -150,10 +150,13 @@ def close_open_position(api_key, secret_key, symbol, position_side="LONG"):
     return {"result": result, "logs": logs}
 
 def get_position_info(api_key, secret_key, symbol, position_side):
-    response = get_positions(api_key, secret_key)  # oder die passende API-Funktion
-    for pos in response['data']:
-        if pos['symbol'] == symbol and pos['positionSide'] == position_side:
-            return pos
+    try:
+        response = get_positions(api_key, secret_key)  # API-Aufruf, der alle Positionen zurückgibt
+        for pos in response['data']:
+            if pos['symbol'] == symbol and pos['positionSide'] == position_side:
+                return pos
+    except Exception as e:
+        logs.append(f"Fehler beim Abrufen der Positionsinfos: {e}")
     return None
 
 def place_market_order(api_key, secret_key, symbol, usdt_amount, position_side="LONG"):
