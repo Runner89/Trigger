@@ -17,17 +17,19 @@ def place_trigger_order(api_key, secret_key, symbol, usdt_amount, trigger_price)
     quantity = int(usdt_amount / trigger_price)
     timestamp = int(time.time() * 1000)
 
-    # Stop-Market (Trigger) Order
     params_dict = {
         "symbol": symbol,
-        "side": "BUY",                # Kaufsignal
-        "type": "STOP_MARKET",        # Trigger-Market-Order
+        "side": "BUY",               # LONG Entry
+        "type": "STOP_MARKET",       # Trigger Order
         "quantity": quantity,
         "positionSide": "LONG",
-        "stopPrice": trigger_price,   # Trigger-Preis
+        "reduceOnly": False,         # Entry Order, nicht zum Schließen
+        "stopPrice": trigger_price,  # Trigger Price
+        "workingType": "MARK_PRICE", # Oder "CONTRACT_PRICE"
         "timestamp": timestamp
     }
 
+    # Signatur erstellen
     query_string = "&".join(f"{k}={params_dict[k]}" for k in sorted(params_dict))
     signature = generate_signature(secret_key, query_string)
     params_dict["signature"] = signature
@@ -43,7 +45,7 @@ def webhook():
 
     api_key = "HCMkr3dg22Hepo9iJWEABqptvDmEmsJBOB0Gr5MptJMuk0a8dl4p7zFCOkdpVGb2AcwDwXaCLA2Go4X0h2g"
     secret_key = "xhnk9SG2t8dDxjae7UbUaicE8iQrbrUTUaJ6GZXnxMzsbaT3aabL90EeuqMCBLs5UBiKaTgQRyItWOKjesF0A"
-    symbol = "PUMP-USDT"
+    symbol = data.get("symbol", "PUMP-USDT")
     trigger_price = float(data.get("trigger_price", 0.0028))
     usdt_amount = float(data.get("usdt_amount", 5))
 
