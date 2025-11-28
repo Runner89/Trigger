@@ -3,6 +3,7 @@ import time
 import hmac
 import hashlib
 import requests
+import urllib.parse
 
 app = Flask(__name__)
 
@@ -13,10 +14,8 @@ def generate_signature(secret_key: str, params: str) -> str:
     return hmac.new(secret_key.encode(), params.encode(), hashlib.sha256).hexdigest()
 
 def place_trigger_order(api_key, secret_key, symbol, usdt_amount, trigger_price):
-    # Mindestmenge für das Symbol (z. B. aus vorheriger Fehlermeldung)
-    MIN_QTY = 584  
 
-    # Menge berechnen und Mindestmenge beachten
+    MIN_QTY = 584
     quantity = max(int(usdt_amount / trigger_price), MIN_QTY)
 
     timestamp = int(time.time() * 1000)
@@ -24,25 +23,35 @@ def place_trigger_order(api_key, secret_key, symbol, usdt_amount, trigger_price)
     params_dict = {
         "symbol": symbol,
         "side": "BUY",
-        "type": "STOP_MARKET",       # Trigger Order Typ
+        "type": "STOP_MARKET",
         "positionSide": "LONG",
-        "quantity": quantity,
-        "stopPrice": trigger_price,  # Trigger-Preis
+        "quantity": str(quantity),
+        "stopPrice": str(trigger_price),
         "workingType": "MARK_PRICE",
-        "reduceOnly": False,
-        "timestamp": timestamp
+        "reduceOnly": "false",
+        "timeInForce": "GTC",
+        "timestamp": str(timestamp)
     }
 
-    # Alphabetisch sortieren, Query-String erstellen
-    query_string = "&".join(f"{k}={params_dict[k]}" for k in sorted(params_dict))
-    signature = hmac.new(secret_key.encode(), query_string.encode(), hashlib.sha256).hexdigest()
-    params_dict["signature"] = signature
+    # Query-String alphabetisch sortieren + URL-encoden
+    query_string = urllib.parse.urlencode(sorted(params_dict.items()))
+    
+    # Signatur auf genau diesen Query-String anwenden
+    signature = generate_signature(secret_key, query_string)
 
-    url = f"{BASE_URL}{ORDER_ENDPOINT}"
-    headers = {"X-BX-APIKEY": api_key, "Content-Type": "application/json"}
+    # Signatur anhängen
+    full_query = query_string + "&signature=" + signature
 
-    response = requests.post(url, headers=headers, json=params_dict)
+    url = f"{BASE_URL}{ORDER_ENDPOINT}?{full_query}"
+
+    headers = {"X-BX-APIKEY": api_key}
+
+    # POST ***OHNE JSON BODY***
+    response = requests.post(url, headers=headers)
+
     return response.json()
+
+
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
@@ -54,9 +63,6 @@ def webhook():
     trigger_price = float(data.get("trigger_price", 0.0028))
     usdt_amount = float(data.get("usdt_amount", 5))
 
-    if not api_key or not secret_key or not symbol:
-        return jsonify({"error": True, "msg": "api_key, secret_key und symbol sind erforderlich"}), 400
-
     order_response = place_trigger_order(api_key, secret_key, symbol, usdt_amount, trigger_price)
 
     return jsonify({
@@ -66,6 +72,7 @@ def webhook():
         "usdt_amount": usdt_amount,
         "order_response": order_response
     })
+
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5000)
