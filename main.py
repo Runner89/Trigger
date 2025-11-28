@@ -773,29 +773,34 @@ def webhook():
 
 
             
-                # Trigger-Market-Order zum Vergrößern der Position
+            # Trigger-Market-Order zum Vergrößern der Position
             try:
-                # Trigger-Preis unterhalb des aktuellen Preises
+                # Trigger-Preis unterhalb des Webhook-Preises
                 trigger_price = price_from_webhook * (1 - so_percent / 100)
-            
-                # Größe der Trigger-Order = Basis-Order * Faktor
-                trigger_order_usdt = usdt_amount * usdt_factor
-            
-                # Menge in Coins berechnen
+                
+                # Trigger-Ordergröße in USDT = Base-USDT * Faktor
+                trigger_order_usdt = usdt_amount * usdt_factor  # z.B. 10 USDT * 1.5 = 15 USDT
+                
+                # Menge in Coins berechnen, falls die API Coins statt USDT erwartet
                 trigger_quantity = trigger_order_usdt / trigger_price
-            
-                logs.append(f"Trigger-Marketorder geplant: Preis={trigger_price:.6f}, Größe={trigger_quantity:.6f} Coins (~{trigger_order_usdt:.6f} USDT)")
-            
+                
+                logs.append(
+                    f"Trigger-Marketorder geplant: Preis={trigger_price:.6f}, "
+                    f"Größe={trigger_quantity:.6f} Coins (~{trigger_order_usdt:.6f} USDT)"
+                )
+                
+                # Prüfen, ob place_market_order USDT oder Coins erwartet!
                 trigger_response = place_market_order(
                     api_key=api_key,
                     secret_key=secret_key,
                     symbol=symbol,
-                    usdt_amount=trigger_quantity,  # Prüfen, ob die Funktion hier Coins oder USDT erwartet
+                    usdt_amount=trigger_order_usdt,  # Wenn die API USDT erwartet
                     position_side=position_side
                 )
-            
+                
             except Exception as e:
                 logs.append(f"Fehler beim Platzieren der Trigger-Marketorder: {e}")
+
 
 
                 
