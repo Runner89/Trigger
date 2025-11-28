@@ -772,31 +772,44 @@ def webhook():
                 sende_telegram_nachricht(botname, f"❌❌❌ Marketorder konnte nicht gesetzt werden für Bot: {botname}")
 
 
-            
-            # Trigger-Market-Order zum Vergrößern der Position
+                        
+            # === Trigger-Market-Order zum Vergrößern der Position ===
             try:
-                # Trigger-Preis unterhalb des Webhook-Preises
+                # Berechne Trigger-Preis unterhalb des aktuellen Preises
                 trigger_price = price_from_webhook * (1 - so_percent / 100)
-                
-                # Größe der Trigger-Order in USDT = Basis-USDT * Faktor
-                trigger_order_usdt = usdt_amount * usdt_factor  # z.B. 10 USDT * 1.5 = 15 USDT
-                
-                logs.append(
-                    f"Trigger-Marketorder geplant: Preis={trigger_price:.6f}, "
-                    f"USDT={trigger_order_usdt:.6f}"
-                )
-                
-                # Direkt USDT übergeben, nicht die Menge in Coins
-                trigger_response = place_market_order(
-                    api_key=api_key,
-                    secret_key=secret_key,
-                    symbol=symbol,
-                    usdt_amount=trigger_order_usdt,  # API erwartet USDT
-                    position_side=position_side
-                )
+            
+                # Berechne Trigger-Order-Größe in USDT
+                trigger_order_usdt = usdt_amount * usdt_factor
+            
+                # Berechne Menge in Coins
+                trigger_quantity = trigger_order_usdt / trigger_price
+            
+                # Loggen zur Kontrolle
+                logs.append(f"Trigger-Marketorder geplant: Preis={trigger_price:.6f}, Menge={trigger_quantity:.6f} Coins (~{trigger_order_usdt:.6f} USDT)")
+            
+                # Margin prüfen
+                if trigger_order_usdt > usdt_balance_before_order:
+                    logs.append(f"Fehler: Nicht genügend USDT für Trigger-Order. Benötigt: {trigger_order_usdt:.6f}, Verfügbar: {usdt_balance_before_order:.6f}")
+                else:
+                    # Trigger-Market-Order platzieren
+                    trigger_response = place_market_order(
+                        api_key=api_key,
+                        secret_key=secret_key,
+                        symbol=symbol,
+                        quantity=trigger_quantity,   # Menge in Coins
+                        position_side=position_side,
+                        price=trigger_price          # nur falls die API ein Trigger-Feld erwartet
+                    )
+            
+                    # Prüfen ob Order gesetzt wurde
+                    if trigger_response.get('code') == 0:
+                        order_id = trigger_response['data']['order']['orderId']
+                        logs.append(f"Trigger-Marketorder erfolgreich platziert: OrderID={order_id}")
+                    else:
+                        logs.append(f"Fehler beim Platzieren der Trigger-Marketorder: {trigger_response.get('msg')}")
             
             except Exception as e:
-                logs.append(f"Fehler beim Platzieren der Trigger-Marketorder: {e}")
+                logs.append(f"Exception beim Platzieren der Trigger-Marketorder: {str(e)}")
 
 
 
