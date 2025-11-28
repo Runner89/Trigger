@@ -1162,44 +1162,37 @@ def webhook():
 
     
                 
-            # ============================
-            # Trigger-Marketorder setzen
-            # ============================
+            # ---------------------------
+            # Trigger-Marketorder
+            # ---------------------------
             trigger_order_resp = None
             try:
-                if price_from_webhook and so_percent and usdt_amount:
-                    # SO aus Webhook als Prozentwert (z.B. 2 für 2%)
-                    so_value = float(so_percent)
-            
+                # Trigger-Prozent aus Webhook
+                so_percent = float(data.get("RENDER", {}).get("so_percent", 0))
+                
+                if price_from_webhook and so_percent > 0 and usdt_amount:
                     # Triggerpreis x% unter price_from_webhook
-                    trigger_price = round(float(price_from_webhook) * (1 - so_value / 100), 6)
-            
-                    # Ordergröße = usdt_factor * Baseorder
+                    trigger_price = round(float(price_from_webhook) * (1 - so_percent / 100), 6)
+                    # Trigger-Ordergröße = usdt_factor * Baseorder
                     trigger_usdt_amount = usdt_amount * usdt_factor
             
-                    logs.append(f"Setze Trigger-Marketorder: Preis={trigger_price}, Größe={trigger_usdt_amount} USDT")
+                    logs.append(f"Trigger-Marketorder geplant: Preis={trigger_price}, Größe={trigger_usdt_amount} USDT")
             
-                    # Trigger-Marketorder platzieren
-                    # ACHTUNG: Funktion muss von deiner API unterstützt werden, z.B. place_trigger_market_order
-                    trigger_order_resp = place_trigger_market_order(
-                        api_key,
-                        secret_key,
-                        symbol,
-                        trigger_usdt_amount,
-                        trigger_price,
-                        position_side  # gleiche Position wie Baseorder
-                    )
-            
-                    if trigger_order_resp.get("code") == 0:
-                        logs.append(f"Trigger-Marketorder erfolgreich gesetzt: {trigger_order_resp}")
+                    # Prüfen, ob deine API Trigger-Marketorders unterstützt
+                    if hasattr(api_module, "place_trigger_market_order"):
+                        trigger_order_resp = place_trigger_market_order(
+                            api_key, secret_key, symbol, trigger_usdt_amount, trigger_price, position_side
+                        )
+                        logs.append(f"Trigger-Marketorder Response: {trigger_order_resp}")
                     else:
-                        logs.append(f"Fehler beim Setzen der Trigger-Marketorder: {trigger_order_resp}")
-                        sende_telegram_nachricht(botname, f"❌ Fehler beim Setzen der Trigger-Marketorder für Bot: {botname}")
+                        logs.append("Trigger-Marketorder nicht gesetzt – API unterstützt keine Triggerorders")
+                        sende_telegram_nachricht(botname, f"⚠️ Trigger-Marketorder nicht möglich für {botname}: API unterstützt keine Triggerorders")
                 else:
                     logs.append("Trigger-Marketorder nicht gesetzt – fehlende Parameter (price_from_webhook, so_percent oder usdt_amount)")
             except Exception as e:
                 logs.append(f"Fehler beim Setzen der Trigger-Marketorder: {e}")
-                sende_telegram_nachricht(botname, f"❌ Fehler beim Setzen der Trigger-Marketorder für Bot: {botname}: {e}")
+                sende_telegram_nachricht(botname, f"❌ Fehler beim Trigger-Marketorder für {botname}: {e}")
+
         
         
         
