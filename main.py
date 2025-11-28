@@ -179,35 +179,6 @@ def place_market_order(api_key, secret_key, symbol, usdt_amount, position_side="
     response = requests.post(url, headers=headers, json=params_dict)
     return response.json()
 
-def place_trigger_order(api_key, secret_key, symbol, trigger_price, quantity, position_side="LONG"):
-    timestamp = int(time.time() * 1000)
-
-    params_dict = {
-        "symbol": symbol,
-        "side": "SELL" if position_side.upper() == "LONG" else "BUY",
-        "type": "STOP_MARKET",
-        "triggerPrice": trigger_price,
-        "triggerType": "LE",  # LE = Last Price Trigger, je nach API
-        "quantity": quantity,
-        "positionSide": position_side.upper(),
-        "timeInForce": "GTC",
-        "timestamp": timestamp
-    }
-
-    query_string = "&".join(f"{k}={params_dict[k]}" for k in sorted(params_dict))
-    signature = generate_signature(secret_key, query_string)
-    params_dict["signature"] = signature
-
-    url = f"{BASE_URL}{ORDER_ENDPOINT}"
-    headers = {
-        "X-BX-APIKEY": api_key,
-        "Content-Type": "application/json"
-    }
-
-    response = requests.post(url, headers=headers, json=params_dict)
-    return response.json()
-
-
 def place_stop_loss_order(api_key, secret_key, symbol, quantity, stop_price, position_side="LONG"):
     timestamp = int(time.time() * 1000)
 
@@ -947,7 +918,7 @@ def webhook():
         sell_percentage2 = data.get("RENDER", {}).get("sell_percentage2")
         beenden = data.get("RENDER", {}).get("beenden", "nein")
         sl = data.get("RENDER", {}).get("sl")
-        SO = float(webhook["RENDER"]["SO"])
+        so_percent = data.get("RENDER", {}).get("so_percent")
 
        # Check: Offene SHORT-Position
         # ------------------------------
@@ -1165,17 +1136,6 @@ def webhook():
                 logs.append(f"Fehler bei Marketorder: {e}")
                 status_fuer_alle[botname] = "Fehler"
                 sende_telegram_nachricht(botname, f"❌❌❌ Marketorder konnte nicht gesetzt werden für Bot: {botname}")
-
-            # ---- SO Triggerorder direkt nach Marketorder setzen ----
-            trigger_price = round(market_avg_price * (1 - SO/100), 6)
-            trigger_qty = executed_qty
-            
-            trigger_response = place_trigger_order(api_key, secret_key, symbol, trigger_price, trigger_qty, position_side)
-            print("Triggerorder Antwort:", trigger_response)
-
-
-
-        
                 
             # 5. Positionsgröße und Liquidationspreis ermitteln
             try:
@@ -1682,6 +1642,50 @@ def webhook():
             stop_loss_price = None
             logs.append(f"Fehler bei Positions-/Liquidationsabfrage: {e}")
             SHORT_sende_telegram_nachricht(botname, f"❌ Fehler bei Positions-/Liquidationsabfrage {botname}: {e}")
+
+
+        # ============================
+        # Trigger-Marketorder setzen
+        # ============================
+        trigger_order_resp = None
+        try:
+            if price_from_webhook and so_percent and usdt_amount:
+                # SO aus Webhook als Prozentwert (z.B. 2 für 2%)
+                so_value = float(so_percent)
+        
+                # Triggerpreis x% unter price_from_webhook
+                trigger_price = round(float(price_from_webhook) * (1 - so_value / 100), 6)
+        
+                # Ordergröße = usdt_factor * Baseorder
+                trigger_usdt_amount = usdt_amount * usdt_factor
+        
+                logs.append(f"Setze Trigger-Marketorder: Preis={trigger_price}, Größe={trigger_usdt_amount} USDT")
+        
+                # Trigger-Marketorder platzieren
+                # ACHTUNG: Funktion muss von deiner API unterstützt werden, z.B. place_trigger_market_order
+                trigger_order_resp = place_trigger_market_order(
+                    api_key,
+                    secret_key,
+                    symbol,
+                    trigger_usdt_amount,
+                    trigger_price,
+                    position_side  # gleiche Position wie Baseorder
+                )
+        
+                if trigger_order_resp.get("code") == 0:
+                    logs.append(f"Trigger-Marketorder erfolgreich gesetzt: {trigger_order_resp}")
+                else:
+                    logs.append(f"Fehler beim Setzen der Trigger-Marketorder: {trigger_order_resp}")
+                    sende_telegram_nachricht(botname, f"❌ Fehler beim Setzen der Trigger-Marketorder für Bot: {botname}")
+            else:
+                logs.append("Trigger-Marketorder nicht gesetzt – fehlende Parameter (price_from_webhook, so_percent oder usdt_amount)")
+        except Exception as e:
+            logs.append(f"Fehler beim Setzen der Trigger-Marketorder: {e}")
+            sende_telegram_nachricht(botname, f"❌ Fehler beim Setzen der Trigger-Marketorder für Bot: {botname}: {e}")
+        
+        
+
+    
     
         # 6. Kaufpreise ggf. löschen (bei neuer BO)
         if firebase_secret and not open_sell_orders_exist:
@@ -1927,3 +1931,4 @@ if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5000)
         
         
+
