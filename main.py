@@ -552,6 +552,7 @@ def webhook():
         sell_percentage2 = data.get("RENDER", {}).get("sell_percentage2")
         beenden = data.get("RENDER", {}).get("beenden", "nein")
         sl = data.get("RENDER", {}).get("sl")
+        so_percent = data.get("RENDER", {}).get("so_percent")
 
        # Check: Offene SHORT-Position
         # ------------------------------
@@ -771,30 +772,31 @@ def webhook():
                 sende_telegram_nachricht(botname, f"❌❌❌ Marketorder konnte nicht gesetzt werden für Bot: {botname}")
 
 
-
-            # Trigger-Market-Order zum Vergrößern der Position
+            
+                # Trigger-Market-Order zum Vergrößern der Position
             try:
-                # trigger_price = Preis, bei dem die Position vergrößert werden soll
-                # z.B. etwas unter dem aktuellen Kaufpreis oder nach Strategie
-                trigger_price = round(price_from_webhook * 0.99, 6)  # Beispiel: 1% unter Base-Preis
+                # Trigger-Preis unterhalb des aktuellen Preises
+                trigger_price = price_from_webhook * (1 - so_percent / 100)
             
-                # Menge berechnen
-                trigger_quantity = usdt_amount / trigger_price
+                # Größe der Trigger-Order = Basis-Order * Faktor
+                trigger_order_usdt = usdt_amount * usdt_factor
             
-                logs.append(f"Trigger-Marketorder geplant: Preis={trigger_price}, Größe={trigger_quantity} USDT")
-                
+                # Menge in Coins berechnen
+                trigger_quantity = trigger_order_usdt / trigger_price
+            
+                logs.append(f"Trigger-Marketorder geplant: Preis={trigger_price:.6f}, Größe={trigger_quantity:.6f} Coins (~{trigger_order_usdt:.6f} USDT)")
+            
                 trigger_response = place_market_order(
                     api_key=api_key,
                     secret_key=secret_key,
                     symbol=symbol,
-                    usdt_amount=trigger_quantity,
+                    usdt_amount=trigger_quantity,  # Prüfen, ob die Funktion hier Coins oder USDT erwartet
                     position_side=position_side
                 )
             
-                logs.append(f"Trigger-Marketorder Antwort: {trigger_response}")
             except Exception as e:
-                logs.append(f"Fehler beim Setzen der Trigger-Marketorder: {e}")
-                sende_telegram_nachricht(botname, f"❌ Fehler beim Trigger-Marketorder für Bot {botname}: {e}")
+                logs.append(f"Fehler beim Platzieren der Trigger-Marketorder: {e}")
+
 
                 
             # 5. Positionsgröße und Liquidationspreis ermitteln
