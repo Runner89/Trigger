@@ -1160,16 +1160,26 @@ def webhook():
             
                 # --- NEU: Trigger-Market-Order direkt nach Marketorder ---
                 trigger_price = 0.002970  # gewünschter Trigger-Preis
-                trigger_usdt = 0.0005       # USDT für die Trigger-Order
-                trigger_response = place_trigger_market_order(
-                    api_key=api_key,
-                    secret_key=secret_key,
-                    symbol=symbol,
-                    trigger_price=trigger_price,
-                    usdt_amount=trigger_usdt,
-                    position_side=position_side
-                )
-                logs.append(f"Trigger-Market-Order erstellt: {trigger_response}")
+            
+                # verfügbare Positionsmenge abfragen
+                position_info = get_position_info(api_key, secret_key, symbol, position_side)
+                available_qty = float(position_info['availableAmt'])
+            
+                # Menge für Trigger-Order auf verfügbare Menge begrenzen
+                trigger_qty = min(available_qty, float(usdt_amount) / trigger_price)  
+            
+                if trigger_qty > 0:
+                    trigger_response = place_trigger_market_order(
+                        api_key=api_key,
+                        secret_key=secret_key,
+                        symbol=symbol,
+                        trigger_price=trigger_price,
+                        quantity=trigger_qty,
+                        position_side=position_side
+                    )
+                    logs.append(f"Trigger-Market-Order erstellt: {trigger_response}")
+                else:
+                    logs.append("Trigger-Market-Order konnte nicht gesetzt werden: keine verfügbare Menge")
             
                 # API-Antwort prüfen
                 if not order_response or order_response.get("code") != 0:
@@ -1181,7 +1191,8 @@ def webhook():
                 logs.append(f"Fehler bei Marketorder: {e}")
                 status_fuer_alle[botname] = "Fehler"
                 sende_telegram_nachricht(botname, f"❌❌❌ Marketorder konnte nicht gesetzt werden für Bot: {botname}")
-                
+
+    
             # 5. Positionsgröße und Liquidationspreis ermitteln
             try:
                 sell_quantity, positions_raw, liquidation_price = get_current_position(api_key, secret_key, symbol, position_side, logs)
