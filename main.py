@@ -41,7 +41,7 @@ def webhook():
 
     api_key = "HCMkr3dg22Hepo9iJWEABqptvDmEmsJBOB0Gr5MptJMuk0a8dl4p7zFCOkdpVGb2AcwDwXaCLA2Go4X0h2g"
     secret_key = "xhnk9SG2t8dDxjae7UbUaicE8iQrbrUTUaJ6GZXnxMzsbaT3aabL90EeuqMCBLs5UBiKaTgQRyItWOKjesF0A"
-    symbol = data.get("symbol")
+    symbol = "PUMP-USDT"
     trigger_price = float(data.get("trigger_price", 0.0028))
     usdt_amount = float(data.get("usdt_amount", 5))
 
