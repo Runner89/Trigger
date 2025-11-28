@@ -772,25 +772,29 @@ def webhook():
 
 
 
-            # Trigger-Order für Positionserweiterung
+            # Trigger-Market-Order zum Vergrößern der Position
             try:
-                # z. B. Trigger-Preis = aktueller Preis + X% für LONG
-                current_price = get_current_price(symbol)
-                if current_price:
-                    trigger_price = round(current_price * (1 + 0.01), 6)  # 1% oberhalb aktueller Preis
-                    logs.append(f"Setze Trigger-Order zur Positionsvergrößerung bei Preis: {trigger_price}")
-                    trigger_response = place_increase_order_trigger(
-                        api_key=api_key,
-                        secret_key=secret_key,
-                        symbol=symbol,
-                        quantity=usdt_amount / current_price,  # gleiche Menge wie Base-Order
-                        trigger_price=trigger_price,
-                        position_side=position_side
-                    )
-                    logs.append(f"Trigger-Order Antwort: {trigger_response}")
+                # trigger_price = Preis, bei dem die Position vergrößert werden soll
+                # z.B. etwas unter dem aktuellen Kaufpreis oder nach Strategie
+                trigger_price = round(price_from_webhook * 0.99, 6)  # Beispiel: 1% unter Base-Preis
+            
+                # Menge berechnen
+                trigger_quantity = usdt_amount / trigger_price
+            
+                logs.append(f"Trigger-Marketorder geplant: Preis={trigger_price}, Größe={trigger_quantity} USDT")
+                
+                trigger_response = place_market_order(
+                    api_key=api_key,
+                    secret_key=secret_key,
+                    symbol=symbol,
+                    usdt_amount=trigger_quantity,
+                    position_side=position_side
+                )
+            
+                logs.append(f"Trigger-Marketorder Antwort: {trigger_response}")
             except Exception as e:
-                logs.append(f"Fehler beim Setzen der Trigger-Order: {e}")
-                sende_telegram_nachricht(botname, f"❌ Fehler beim Setzen der Trigger-Order für Bot {botname}: {e}")
+                logs.append(f"Fehler beim Setzen der Trigger-Marketorder: {e}")
+                sende_telegram_nachricht(botname, f"❌ Fehler beim Trigger-Marketorder für Bot {botname}: {e}")
 
                 
             # 5. Positionsgröße und Liquidationspreis ermitteln
