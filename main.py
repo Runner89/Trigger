@@ -1135,6 +1135,57 @@ def webhook():
                 logs.append(f"Fehler bei Marketorder: {e}")
                 status_fuer_alle[botname] = "Fehler"
                 sende_telegram_nachricht(botname, f"❌❌❌ Marketorder konnte nicht gesetzt werden für Bot: {botname}")
+
+            # ---- SO Triggerorder direkt nach Marketorder setzen ----
+            try:
+                so_percentage = float(data.get("RENDER", {}).get("SO", 0))
+            
+                if so_percentage > 0 and price_from_webhook:
+            
+                    # Base-Order USDT
+                    base_usdt = saved_usdt_amounts.get(botname, 0)
+            
+                    # Positionsgröße = Base USDT * usdt_factor
+                    trigger_usdt_amount = base_usdt * usdt_factor
+            
+                    logs.append(f"SO Trigger aktiv. Trigger USDT: {trigger_usdt_amount}")
+            
+                    current_price = float(price_from_webhook)
+            
+                    # Preis für die Triggerorder SO % unter dem Kaufpreis
+                    trigger_price = round(current_price * (1 - so_percentage / 100), 6)
+            
+                    logs.append(f"Triggerpreis = {trigger_price} (SO = -{so_percentage}%)")
+            
+                    # ---- WICHTIG: BingX TRIGGER-MARKET ORDER (keine STOPMARKET!) ----
+                    trigger_response = bingx_futures_request(
+                        api_key=api_key,
+                        secret_key=secret_key,
+                        method="POST",
+                        endpoint="/trade/order",
+                        data={
+                            "symbol": symbol,
+                            "side": "BUY" if position_side.upper() == "LONG" else "SELL",
+                            "type": "MARKET",              # <-- keine STOPMARKET!
+                            "triggerPrice": trigger_price, # <-- Trigger Preis
+                            "triggerType": "LE",           # LE = Preis fällt & löst aus
+                            "quantity": trigger_usdt_amount,
+                            "positionSide": position_side.upper()
+                        }
+                    )
+            
+                    logs.append(f"SO Trigger-Marketorder gesetzt: {trigger_response}")
+            
+                else:
+                    logs.append("SO nicht gesetzt oder kein Preis verfügbar – Triggerorder übersprungen.")
+            
+            except Exception as e:
+                logs.append(f"Fehler bei SO Triggerorder: {e}")
+                sende_telegram_nachricht(botname, f"❌ Fehler bei SO Triggerorder: {e}")
+
+    
+
+        
                 
             # 5. Positionsgröße und Liquidationspreis ermitteln
             try:
