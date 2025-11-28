@@ -1,54 +1,63 @@
-from flask import Flask, request, jsonify
+import requests
 import time
 import hmac
 import hashlib
-import requests
 
-app = Flask(__name__)
-
-BASE_URL = "https://open-api.bingx.com"
-ORDER_ENDPOINT = "/openApi/swap/v2/trade/order"
-
+# --- Konfiguration ---
 API_KEY = "HCMkr3dg22Hepo9iJWEABqptvDmEmsJBOB0Gr5MptJMuk0a8dl4p7zFCOkdpVGb2AcwDwXaCLA2Go4X0h2g"
-SECRET_KEY = "xhnk9SG2t8dDxjae7UbUaicE8iQrbrUTUaJ6GZXnxMzsbaT3aabL90EeuqMCBLs5UBiKaTgQRyItWOKjesF0A"
+API_SECRET = "xhnk9SG2t8dDxjae7UbUaicE8iQrbrUTUaJ6GZXnxMzsbaT3aabL90EeuqMCBLs5UBiKaTgQRyItWOKjesF0A"
+BASE_URL = "https://open-api.bingx.com"  # Offizielle API
 
-def generate_signature(secret_key: str, params: str) -> str:
-    return hmac.new(secret_key.encode('utf-8'), params.encode('utf-8'), hashlib.sha256).hexdigest()
-
-def place_trigger_market_order(symbol: str, usdt_amount: float, trigger_price: float, position_side="LONG"):
+def place_trigger_market_order(symbol: str, side: str, trigger_price: float, quantity: float, position_side="LONG"):
+    """
+    Erstellt direkt eine Trigger-Market-Order auf BingX, um eine neue Position zu eröffnen.
     
-    #Trigger-Market-Order (STOP_MARKET) direkt setzen
-
-    quantity = round(usdt_amount / trigger_price, 6)
-    timestamp = int(time.time() * 1000)
-
-    params_dict = {
+    symbol: Markt z.B. "BTC-USDT"
+    side: "BUY" oder "SELL"
+    trigger_price: Preis, bei dem die Market-Order ausgelöst wird
+    quantity: Menge der Position
+    position_side: "LONG" oder "SHORT"
+    """
+    
+    endpoint = "/openApi/swap/v2/trade/order"  # BingX Endpoint für Orders
+    url = BASE_URL + endpoint
+    
+    # Payload für Trigger Order
+    payload = {
         "symbol": symbol,
-        "side": "BUY",               # LONG = BUY
-        "type": "STOP_MARKET",       # Trigger-Market Order
-        "stopPrice": round(trigger_price, 6),  # Preis, bei dem die Order ausgelöst wird
-        "quantity": quantity,
-        "positionSide": position_side,
-        "timestamp": timestamp,
-        "timeInForce": "GTC"
+        "side": side.upper(),
+        "type": "TRIGGER_MARKET",       # Trigger-Market Order
+        "triggerPrice": round(trigger_price, 6),
+        "quantity": round(quantity, 6),
+        "positionSide": position_side.upper(),
+        "reduceOnly": False,            # Wichtig für neue Position
+        "timestamp": int(time.time() * 1000)
     }
+    
+    # Signatur erstellen
+    query_string = "&".join([f"{key}={payload[key]}" for key in sorted(payload)])
+    signature = hmac.new(API_SECRET.encode(), query_string.encode(), hashlib.sha256).hexdigest()
+    payload["signature"] = signature
+    
+    headers = {
+        "X-BX-APIKEY": API_KEY,
+        "Content-Type": "application/json"
+    }
+    
+    response = requests.post(url, json=payload, headers=headers)
+    
+    try:
+        return response.json()
+    except Exception:
+        return {"error": True, "raw_response": response.text}
 
-    query_string = "&".join(f"{k}={params_dict[k]}" for k in sorted(params_dict))
-    params_dict["signature"] = generate_signature(SECRET_KEY, query_string)
-
-    url = f"{BASE_URL}{ORDER_ENDPOINT}"
-    headers = {"X-BX-APIKEY": API_KEY, "Content-Type": "application/json"}
-    response = requests.post(url, headers=headers, json=params_dict)
-    return response.json()
-
-@app.route('/webhook', methods=['POST'])
-def webhook():
-    # Nur eine Trigger-Market-Order erstellen, kein Check, kein Telegram, kein Firebase
-    symbol = "BABY-USDT"
-    usdt_amount = 10
-    trigger_price = 0.002980
-    result = place_trigger_market_order(symbol, usdt_amount, trigger_price, "LONG")
-    return jsonify({"status": "trigger_order_created", "result": result})
-
+# --- Beispielaufruf ---
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=5000)
+    result = place_trigger_market_order(
+        symbol="PUMP-USDT",
+        side="BUY",
+        trigger_price=0.00298,
+        quantity=10,
+        position_side="LONG"
+    )
+    print(result)
