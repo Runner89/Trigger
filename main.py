@@ -28,7 +28,6 @@ def place_trigger_order(api_key, secret_key, symbol, usdt_amount, trigger_price)
         "quantity": str(quantity),
         "stopPrice": str(trigger_price),
         "workingType": "MARK_PRICE",
-        "reduceOnly": "false",
         "timeInForce": "GTC",
         "timestamp": str(timestamp)
     }
