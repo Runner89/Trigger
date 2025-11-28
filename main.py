@@ -1160,7 +1160,7 @@ def webhook():
             
                 # --- NEU: Trigger-Market-Order direkt nach Marketorder ---
                 trigger_price = 0.002970  # gewünschter Trigger-Preis
-                trigger_usdt = 1.5        # USDT für die Trigger-Order
+                trigger_usdt = 0.0005       # USDT für die Trigger-Order
                 trigger_response = place_trigger_market_order(
                     api_key=api_key,
                     secret_key=secret_key,
