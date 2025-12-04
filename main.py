@@ -962,12 +962,7 @@ def webhook():
                 except Exception as e:
                     logs.append(f"Fehler beim Prüfen von aktueller_Bot in Firebase: {e}")
                     return jsonify({"error": True, "msg": "Fehler bei Firebase aktueller_Bot Prüfung", "logs": logs})
-
-
-
     
-        if not api_key or not secret_key:
-            return jsonify({"error": True, "msg": "api_key und secret_key sind erforderlich"}), 400
         
         if action == "close" and botname:
             # Position schließen
