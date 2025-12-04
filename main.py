@@ -962,7 +962,7 @@ def webhook():
         # ------------------------------
 
         if aktueller_Bot:
-           if botname != aktueller_Bot:
+            if botname != aktueller_Bot:
                 logs.append(f"Bot {botname} ignoriert – anderer Bot aktiv: {aktueller_Bot}")
                 return jsonify({"status": "different_bot_active", "botname": botname, "logs": logs})
             else:
@@ -972,16 +972,15 @@ def webhook():
             try:
                 anderer_bot_aktiv = firebase_bot_is_active(botname, firebase_secret)
                 if anderer_bot_aktiv:
-                    # Ein anderer Bot ist aktiv → Abbruch
                     logs.append(f"Bot {botname} ignoriert – anderer Bot aktiv in Firebase")
                     return jsonify({"status": "different_bot_active_in_firebase", "botname": botname, "logs": logs})
                 else:
-                    # Kein anderer Bot aktiv → den aktuellen Bot setzen
                     logs.append(f"Bot {botname} ist frei in Firebase → fortfahren")
-                    aktueller_Bot = botname  # Globale Variable setzen
+                    aktueller_Bot = botname
             except Exception as e:
                 logs.append(f"Fehler beim Prüfen von aktueller_Bot in Firebase: {e}")
                 return jsonify({"error": True, "msg": "Fehler bei Firebase aktueller_Bot Prüfung", "logs": logs})
+
 
     
         
