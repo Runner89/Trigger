@@ -961,8 +961,8 @@ def webhook():
        # Check: Offene SHORT-Position
         # ------------------------------
 
-       if aktueller_Bot:
-            if botname != aktueller_Bot:
+        if aktueller_Bot:
+           if botname != aktueller_Bot:
                 logs.append(f"Bot {botname} ignoriert – anderer Bot aktiv: {aktueller_Bot}")
                 return jsonify({"status": "different_bot_active", "botname": botname, "logs": logs})
             else:
