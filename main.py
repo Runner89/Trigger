@@ -369,6 +369,15 @@ def firebase_delete_all_aktueller_bot(firebase_secret):
     response = requests.delete(url)
     return f"🔥 kompletter Eintrag 'aktueller_Bot' gelöscht, Status: {response.status_code}"
 
+def firebase_bot_is_active(botname, firebase_secret):
+    url = f"{FIREBASE_URL}/aktueller_Bot.json?auth={firebase_secret}"
+    response = requests.get(url)
+    if response.status_code != 200:
+        return False
+    
+    data = response.json() or {}
+    return botname in data
+
 
 def firebase_lese_ordergroesse(botname, firebase_secret):
     url = f"{FIREBASE_URL}/ordergroesse/{botname}.json?auth={firebase_secret}"
@@ -936,14 +945,25 @@ def webhook():
        # Check: Offene SHORT-Position
         # ------------------------------
         try:
-            short_position_size, _, _ = get_current_position(api_key, secret_key, symbol, "SHORT", logs)
-            logs.append(f"Short Position Size: {short_position_size}")
-            if short_position_size and short_position_size > 0:
-                logs.append("Offene SHORT-Position vorhanden → keine Aktion ausgeführt.")
-                return jsonify({"status": "short_position_exists", "botname": botname, "logs": logs})
-        except Exception as e:
-            logs.append(f"Fehler bei SHORT-Positionsprüfung: {e}")
-            return jsonify({"error": True, "msg": "Fehler bei SHORT-Positionsprüfung", "logs": logs}), 500
+            if aktueller_Bot:
+                if botname != aktueller_Bot:
+                    logs.append(f"Bot {botname} ignoriert – anderer Bot aktiv: {aktueller_Bot}")
+                    return jsonify({"status": "different_bot_active", "botname": botname, "logs": logs})
+                else:
+                    logs.append(f"Bot {botname} ist aktiv (entspricht globale Variable)")
+            else:
+                # Fall 2: globale Variable ist leer → Firebase prüfen
+                try:
+                    if not firebase_bot_is_active(botname, firebase_secret):
+                        logs.append(f"Bot {botname} NICHT in Firebase aktiv → Abbruch")
+                        return jsonify({"status": "bot_not_active_in_firebase", "botname": botname, "logs": logs})
+                    else:
+                        logs.append(f"Bot {botname} IST in Firebase aktiv → fortfahren")
+                except Exception as e:
+                    logs.append(f"Fehler beim Prüfen von aktueller_Bot in Firebase: {e}")
+                    return jsonify({"error": True, "msg": "Fehler bei Firebase aktueller_Bot Prüfung", "logs": logs})
+
+
 
     
         if not api_key or not secret_key:
@@ -1489,6 +1509,7 @@ def webhook():
         sell_percentage2 = data.get("RENDER", {}).get("sell_percentage2")
         beenden = data.get("RENDER", {}).get("beenden", "nein")
         sl = data.get("RENDER", {}).get("sl")
+        
     
         if not api_key or not secret_key:
             return jsonify({"error": True, "msg": "api_key und secret_key sind erforderlich"}), 400
@@ -1497,14 +1518,23 @@ def webhook():
         # ------------------------------
       
         try:
-            long_position_size, _, _ = SHORT_get_current_position(api_key, secret_key, symbol, "LONG", logs)
-            logs.append(f"Long Position Size {long_position_size}")
-            if long_position_size and long_position_size > 0:
-                logs.append("Offene LONG-Position vorhanden - keine Aktion ausgeführt.")
-                return jsonify({"status": "long_position_exists", "botname": botname, "logs": logs})
-        except Exception as e:
-            logs.append(f"Fehler bei LONG-Positionsprüfung: {e}")
-            return jsonify({"error": True, "msg": "Fehler bei LONG-Positionsprüfung", "logs": logs}), 500
+            if aktueller_Bot:
+                if botname != aktueller_Bot:
+                    logs.append(f"Bot {botname} ignoriert – anderer Bot aktiv: {aktueller_Bot}")
+                    return jsonify({"status": "different_bot_active", "botname": botname, "logs": logs})
+                else:
+                    logs.append(f"Bot {botname} ist aktiv (entspricht globale Variable)")
+            else:
+                # Fall 2: globale Variable ist leer → Firebase prüfen
+                try:
+                    if not firebase_bot_is_active(botname, firebase_secret):
+                        logs.append(f"Bot {botname} NICHT in Firebase aktiv → Abbruch")
+                        return jsonify({"status": "bot_not_active_in_firebase", "botname": botname, "logs": logs})
+                    else:
+                        logs.append(f"Bot {botname} IST in Firebase aktiv → fortfahren")
+                except Exception as e:
+                    logs.append(f"Fehler beim Prüfen von aktueller_Bot in Firebase: {e}")
+                    return jsonify({"error": True, "msg": "Fehler bei Firebase aktueller_Bot Prüfung", "logs": logs})
     
     
         # action == "close" -> sofort close der SHORT position
