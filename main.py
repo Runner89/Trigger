@@ -1553,6 +1553,8 @@ def webhook():
         sell_percentage2 = data.get("RENDER", {}).get("sell_percentage2")
         beenden = data.get("RENDER", {}).get("beenden", "nein")
         sl = data.get("RENDER", {}).get("sl")
+        bot_nr = data.get("RENDER", {}).get("bot_nr")
+        
         
     
         if not api_key or not secret_key:
