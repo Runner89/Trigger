@@ -29,6 +29,7 @@
 #    "secret_key": "",
 #    "symbol": "BABY-USDT",
 #    "botname": "Baby_Bot", # muss einmalig sein
+#    "bot_nr": "1", # Nr. pro Chart
 #    "position_side": "LONG",
 #    "sell_percentage": 2.5,
 #    "price": {{close}},
@@ -962,6 +963,7 @@ def webhook():
         sell_percentage2 = data.get("RENDER", {}).get("sell_percentage2")
         beenden = data.get("RENDER", {}).get("beenden", "nein")
         sl = data.get("RENDER", {}).get("sl")
+        bot_nr = data.get("RENDER", {}).get("bot_nr")
 
        # Check: Offene SHORT-Position
         # ------------------------------
