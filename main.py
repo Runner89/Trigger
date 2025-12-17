@@ -376,26 +376,28 @@ def firebase_delete_aktueller_bot(bot_nr, firebase_secret):
     return f"aktueller_Bot[{bot_nr}] gelöscht, Status: {response.status_code}"
 
 
-def firebase_bot_is_active(botname, firebase_secret):
+def firebase_bot_is_active(bot_nr, botname, firebase_secret):
     url = f"{FIREBASE_URL}/aktueller_Bot.json?auth={firebase_secret}"
     try:
         response = requests.get(url)
         if response.status_code != 200:
             return False  # Fehler beim Zugriff auf Firebase
 
-        aktueller_bot_firebase = response.json()  # kann dict, str oder None sein
+        aktueller_bot_firebase = response.json()  # sollte dict oder None sein
         if not aktueller_bot_firebase:
-            # Kein Eintrag in Firebase
+            return False  # kein Eintrag vorhanden
+
+        # Prüfen, ob bot_nr vorhanden ist
+        if str(bot_nr) in aktueller_bot_firebase:
+            # Prüfen, ob botname übereinstimmt
+            if aktueller_bot_firebase[str(bot_nr)] == botname:
+                return True
+            else:
+                return False
+        else:
             return False
 
-        # Prüfen, ob der Eintrag dem Botnamen entspricht
-        if aktueller_bot_firebase == botname:
-            return False  # gleicher Bot → False
-        else:
-            return True   # anderer Bot aktiv → True
-
     except Exception as e:
-        # Bei allen Exceptions False zurückgeben
         print(f"Fehler bei Firebase-Abfrage: {e}")
         return False
 
@@ -967,6 +969,20 @@ def webhook():
 
        # Check: Offene SHORT-Position
         # ------------------------------
+
+        if aktueller_Bot:
+            if not bot_nr in aktueller_Bot:
+                
+
+
+
+
+                
+                logs.append(f"Bot-Nr. {bot_nr}, Bot {botname} ignoriert – anderer Bot aktiv: {aktueller_Bot}")
+                return jsonify({"status": "different_bot_active", "botname": botname, "logs": logs})
+
+
+                
 
         if aktueller_Bot:
             if botname != aktueller_Bot:
