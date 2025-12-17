@@ -1305,11 +1305,7 @@ def webhook():
                     logs.append(f"Fehler beim Löschen von aktueller_Bot in Firebase: {e}")
                     sende_telegram_nachricht(botname, f"Fehler beim Löschen von aktueller_Bot in Firebase {botname}: {e}")
                     
-
-                aktueller_Bot = {
-                    "bot_nr": bot_nr,
-                    "botname": botname
-                }
+                aktueller_Bot[bot_nr] = botname
                 
                 logs.append(
                     f"Aktuelle Baseorder ausgeführt → "
@@ -1839,10 +1835,7 @@ def webhook():
         # Base Order Zeit speichern, falls neue BO
         if not open_sell_orders_exist:           
 
-            aktueller_Bot = {
-                "bot_nr": bot_nr,
-                "botname": botname
-            }
+            aktueller_Bot[bot_nr] = botname
             
             logs.append(
                 f"Aktuelle Baseorder ausgeführt → "
