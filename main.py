@@ -360,16 +360,19 @@ def firebase_speichere_ordergroesse(botname, betrag, firebase_secret):
     response = requests.put(url, json=data)
     return f"Ordergröße für {botname} gespeichert: {betrag}, Status: {response.status_code}"
 
-def firebase_set_aktueller_bot(botname, firebase_secret):
-    url = f"{FIREBASE_URL}/aktueller_Bot/{botname}.json?auth={firebase_secret}"
-    data = botname
+def firebase_set_aktueller_bot(bot_nr, botname, firebase_secret):
+    url = f"{FIREBASE_URL}/aktueller_Bot/{bot_nr}.json?auth={firebase_secret}"
+    data = {
+        "botname": botname
+    }
     response = requests.put(url, json=data)
-    return f"aktueller_Bot Eintrag erstellt: {botname}, Status: {response.status_code}"
+    return f"aktueller_Bot[{bot_nr}] gesetzt: {botname}, Status: {response.status_code}"
 
-def firebase_delete_all_aktueller_bot(firebase_secret):
-    url = f"{FIREBASE_URL}/aktueller_Bot.json?auth={firebase_secret}"
+
+def firebase_delete_aktueller_bot(bot_nr, firebase_secret):
+    url = f"{FIREBASE_URL}/aktueller_Bot/{bot_nr}.json?auth={firebase_secret}"
     response = requests.delete(url)
-    return f"🔥 kompletter Eintrag 'aktueller_Bot' gelöscht, Status: {response.status_code}"
+    return f"aktueller_Bot[{bot_nr}] gelöscht, Status: {response.status_code}"
 
 
 def firebase_bot_is_active(botname, firebase_secret):
@@ -1008,7 +1011,7 @@ def webhook():
                     logs.append(firebase_loesche_kaufpreise(botname, firebase_secret))
                     logs.append(firebase_loesche_ordergroesse(botname, firebase_secret))
                     logs.append(firebase_loesche_base_order_time(botname, firebase_secret))
-                    logs.append(firebase_delete_all_aktueller_bot(firebase_secret))
+                    logs.append(firebase_delete_aktueller_bot(bot_nr, firebase_secret))
                     
                     print("\n".join(logs))
                 except Exception as e:
@@ -1293,21 +1296,29 @@ def webhook():
             if not open_sell_orders_exist: #Zeitpunkt der BO speichern und Botname ergänzen
                 # Firebase löschen
                 try:
-                    logs.append(firebase_delete_all_aktueller_bot(firebase_secret))
+                    logs.append(firebase_delete_aktueller_bot(bot_nr, firebase_secret))
 
 
                 except Exception as e:
                     logs.append(f"Fehler beim Löschen von aktueller_Bot in Firebase: {e}")
                     sende_telegram_nachricht(botname, f"Fehler beim Löschen von aktueller_Bot in Firebase {botname}: {e}")
                     
-                aktueller_Bot = None
-                # 🔥 Aktuellen Bot global speichern
-                aktueller_Bot = botname
-                logs.append(f"Aktuelle Baseorder ausgeführt → aktueller_Bot = {aktueller_Bot}")
+
+                aktueller_Bot = {
+                    "bot_nr": bot_nr,
+                    "botname": botname
+                }
+                
+                logs.append(
+                    f"Aktuelle Baseorder ausgeführt → "
+                    f"bot_nr={bot_nr}, botname={botname}"
+                )
+
+                
                 
                 # 🔥 In Firebase unter aktueller_Bot speichern
                 try:
-                    logs.append(firebase_set_aktueller_bot(botname, firebase_secret))
+                    logs.append(firebase_set_aktueller_bot(bot_nr, botname, firebase_secret))
                 except Exception as e:
                     logs.append(f"Fehler beim Schreiben von aktueller_Bot in Firebase: {e}")
                     sende_telegram_nachricht(botname, f"Fehler beim Schreiben von aktueller_Bot in Firebase {botname}: {e}")
@@ -1573,7 +1584,7 @@ def webhook():
                     logs.append(SHORT_firebase_loesche_kaufpreise(botname, firebase_secret))
                     logs.append(firebase_loesche_ordergroesse(botname, firebase_secret))
                     logs.append(SHORT_firebase_loesche_base_order_time(botname, firebase_secret))
-                    logs.append(firebase_delete_all_aktueller_bot(firebase_secret))
+                    logs.append(firebase_delete_aktueller_bot(bot_nr, firebase_secret))
 
 
                 except Exception as e:
@@ -1826,13 +1837,20 @@ def webhook():
         # Base Order Zeit speichern, falls neue BO
         if not open_sell_orders_exist:           
 
-            # 🔥 Aktuellen Bot global speichern
-            aktueller_Bot = botname
-            logs.append(f"Aktuelle Baseorder ausgeführt → aktueller_Bot = {aktueller_Bot}")
+            aktueller_Bot = {
+                "bot_nr": bot_nr,
+                "botname": botname
+            }
+            
+            logs.append(
+                f"Aktuelle Baseorder ausgeführt → "
+                f"bot_nr={bot_nr}, botname={botname}"
+            )
+
             
             # 🔥 In Firebase unter aktueller_Bot speichern
             try:
-                logs.append(firebase_set_aktueller_bot(botname, firebase_secret))
+                logs.append(firebase_set_aktueller_bot(bot_nr, botname, firebase_secret))
             except Exception as e:
                 logs.append(f"Fehler beim Schreiben von aktueller_Bot in Firebase: {e}")
                 sende_telegram_nachricht(botname, f"Fehler beim Schreiben von aktueller_Bot in Firebase {botname}: {e}")
