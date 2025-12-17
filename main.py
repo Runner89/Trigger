@@ -972,40 +972,22 @@ def webhook():
 
         if aktueller_Bot:
             if not bot_nr in aktueller_Bot:
-                
+                try:
+                    anderer_bot_nicht_aktiv = firebase_bot_is_active(bot_nr, botname, firebase_secret)
+                    if not anderer_bot_nicht_aktiv:
+                        logs.append(f"Bot {botname} ignoriert – anderer Bot aktiv in Firebase")
+                        return jsonify({"status": "different_bot_active_in_firebase", "botname": botname, "logs": logs})
+                except Exception as e:
+                    logs.append(f"Fehler beim Prüfen von aktueller_Bot in Firebase: {e}")
+                    return jsonify({"error": True, "msg": "Fehler bei Firebase aktueller_Bot Prüfung", "logs": logs})
 
-
-
-
-                
-                logs.append(f"Bot-Nr. {bot_nr}, Bot {botname} ignoriert – anderer Bot aktiv: {aktueller_Bot}")
-                return jsonify({"status": "different_bot_active", "botname": botname, "logs": logs})
-
-
-                
-
-        if aktueller_Bot:
-            if botname != aktueller_Bot:
-                logs.append(f"Bot {botname} ignoriert – anderer Bot aktiv: {aktueller_Bot}")
-                return jsonify({"status": "different_bot_active", "botname": botname, "logs": logs})
-            else:
-                logs.append(f"Bot {botname} ist aktiv (entspricht globale Variable)")
-        else:
-            # Globale Variable ist leer → Firebase prüfen
-            try:
-                anderer_bot_aktiv = firebase_bot_is_active(botname, firebase_secret)
-                if anderer_bot_aktiv:
-                    logs.append(f"Bot {botname} ignoriert – anderer Bot aktiv in Firebase")
-                    return jsonify({"status": "different_bot_active_in_firebase", "botname": botname, "logs": logs})
+            else
+                if bot_nr in aktueller_Bot and aktueller_Bot[bot_nr] == botname:
+                    print(f"Bot {botname} mit Nummer {bot_nr} ist identisch in der globalen Variable")
                 else:
-                    logs.append(f"Bot {botname} ist frei in Firebase → fortfahren")
-                    aktueller_Bot = botname
-            except Exception as e:
-                logs.append(f"Fehler beim Prüfen von aktueller_Bot in Firebase: {e}")
-                return jsonify({"error": True, "msg": "Fehler bei Firebase aktueller_Bot Prüfung", "logs": logs})
-
-
-    
+                    print(f"Bot {botname} mit Nummer {bot_nr} ist nicht identisch")
+                    return jsonify({"status": "different_bot_active", "botname": botname, "logs": logs})
+   
         
         if action == "close" and botname:
             # Position schließen
@@ -1020,7 +1002,11 @@ def webhook():
             status_fuer_alle.pop(botname, None)
             alarm_counter.pop(botname, None)
             base_order_times.pop(botname, None)
-            aktueller_Bot = None
+        
+            if bot_nr in aktueller_Bot and aktueller_Bot[bot_nr] == botname:
+                del aktueller_Bot[bot_nr]  # Eintrag löschen
+                print(f"Bot {botname} mit Nummer {bot_nr} wurde aus der globalen Variable gelöscht")
+            
             
             # Kaufpreise löschen (Firebase oder lokal)
             if firebase_secret:
@@ -1561,26 +1547,23 @@ def webhook():
       
         
         if aktueller_Bot:
-            if botname != aktueller_Bot:
-                logs.append(f"Bot {botname} ignoriert – anderer Bot aktiv: {aktueller_Bot}")
-                return jsonify({"status": "different_bot_active", "botname": botname, "logs": logs})
-            else:
-                logs.append(f"Bot {botname} ist aktiv (entspricht globale Variable)")
-        else:
-            # Globale Variable ist leer → Firebase prüfen
-            try:
-                anderer_bot_aktiv = firebase_bot_is_active(botname, firebase_secret)
-                if anderer_bot_aktiv:
-                    # Ein anderer Bot ist aktiv → Abbruch
-                    logs.append(f"Bot {botname} ignoriert – anderer Bot aktiv in Firebase")
-                    return jsonify({"status": "different_bot_active_in_firebase", "botname": botname, "logs": logs})
+            if not bot_nr in aktueller_Bot:
+                try:
+                    anderer_bot_nicht_aktiv = firebase_bot_is_active(bot_nr, botname, firebase_secret)
+                    if not anderer_bot_nicht_aktiv:
+                        logs.append(f"Bot {botname} ignoriert – anderer Bot aktiv in Firebase")
+                        return jsonify({"status": "different_bot_active_in_firebase", "botname": botname, "logs": logs})
+                except Exception as e:
+                    logs.append(f"Fehler beim Prüfen von aktueller_Bot in Firebase: {e}")
+                    return jsonify({"error": True, "msg": "Fehler bei Firebase aktueller_Bot Prüfung", "logs": logs})
+
+            else
+                if bot_nr in aktueller_Bot and aktueller_Bot[bot_nr] == botname:
+                    print(f"Bot {botname} mit Nummer {bot_nr} ist identisch in der globalen Variable")
                 else:
-                    # Kein anderer Bot aktiv → den aktuellen Bot setzen
-                    logs.append(f"Bot {botname} ist frei in Firebase → fortfahren")
-                    aktueller_Bot = botname  # Globale Variable setzen
-            except Exception as e:
-                logs.append(f"Fehler beim Prüfen von aktueller_Bot in Firebase: {e}")
-                return jsonify({"error": True, "msg": "Fehler bei Firebase aktueller_Bot Prüfung", "logs": logs})
+                    print(f"Bot {botname} mit Nummer {bot_nr} ist nicht identisch")
+                    return jsonify({"status": "different_bot_active", "botname": botname, "logs": logs})
+   
 
     
         # action == "close" -> sofort close der SHORT position
@@ -1591,7 +1574,11 @@ def webhook():
             status_fuer_alle.pop(botname, None)
             alarm_counter.pop(botname, None)
             base_order_times.pop(botname, None)
-            aktueller_Bot = None
+            
+            if bot_nr in aktueller_Bot and aktueller_Bot[bot_nr] == botname:
+                del aktueller_Bot[bot_nr]  # Eintrag löschen
+                print(f"Bot {botname} mit Nummer {bot_nr} wurde aus der globalen Variable gelöscht")
+            
             # optional: firebase löschen
             if firebase_secret:
                 try:
