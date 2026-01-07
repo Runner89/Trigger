@@ -111,23 +111,18 @@ def _norm_ms(t):
         t = int(t)
     except Exception:
         return 0
-    if t < 1_000_000_000_000:
-        return t * 1000
-    return t
+    return t * 1000 if t < 1_000_000_000_000 else t
 
 def fetch_netpnl_for_close(api_key, secret_key, botname, symbol, position_side, since_ms, pnl_debug=None):
     if pnl_debug is None:
         pnl_debug = []
 
     side = position_side.upper()
-
     now_ms = int(time.time() * 1000)
 
+    # ✅ Robust: keine serverseitige symbol/start/end Filter, nur limit
     params = {
-        "symbol": symbol,
-        "startTime": max(since_ms - 120_000, now_ms - 7 * 24 * 60 * 60 * 1000),
-        "endTime": now_ms,
-        "limit": 200,
+        "limit": 500,
         "timestamp": now_ms
     }
 
@@ -135,30 +130,29 @@ def fetch_netpnl_for_close(api_key, secret_key, botname, symbol, position_side, 
     pnl_debug.append(f"[PnL] endpoint={INCOME_ENDPOINT} code={resp.get('code')} msg={resp.get('msg')}")
 
     if resp.get("code") != 0:
+        pnl_debug.append(f"[PnL] full_resp={str(resp)[:800]}")
         return None, pnl_debug
 
     data = resp.get("data")
-    rows = data.get("list", []) if isinstance(data, dict) and "list" in data else (data or [])
+    if isinstance(data, dict) and "list" in data:
+        rows = data.get("list") or []
+    elif isinstance(data, list):
+        rows = data
+    else:
+        rows = []
+        pnl_debug.append(f"[PnL] data_type={type(data)} data_preview={str(data)[:200]}")
 
-    close_window_ms = 30_000
-    since = since_ms - close_window_ms
-
-    pnl_debug.append(f"[PnL] rows_count={len(rows)} since_ms={since_ms} since_with_tol={since}")
-    for i, r in enumerate(rows[:3]):
-        t_raw = r.get("time") or r.get("timestamp")
-        t_ms = _norm_ms(t_raw)
-        pnl_debug.append(
-            f"[PnL] sample{i} time_raw={t_raw} time_ms={t_ms} "
-            f"incomeType={r.get('incomeType')} side={r.get('positionSide') or r.get('posSide')} "
-            f"income={r.get('income')}"
-        )
+    pnl_debug.append(f"[PnL] rows_count={len(rows)}")
 
     def is_realized(it: str) -> bool:
         it = (it or "").upper()
         return ("REAL" in it and "PNL" in it) or ("REALIZED" in it)
 
+    # ✅ Toleranz: Serverzeit + Buchungsdelay
+    since = since_ms - 60_000  # 60s vorher
+
     total = 0.0
-    found_any = False
+    found = False
     newest_t = 0
 
     for row in rows:
@@ -184,16 +178,23 @@ def fetch_netpnl_for_close(api_key, secret_key, botname, symbol, position_side, 
             continue
 
         total += income_val
-        found_any = True
+        found = True
         newest_t = max(newest_t, t)
 
-    if not found_any:
-        pnl_debug.append("[PnL] no matching realized pnl entries in window")
+    if not found:
+        pnl_debug.append(f"[PnL] no matches for symbol={symbol} side={side} since={since}")
+        # zum Debug: 3 samples vom richtigen symbol (falls vorhanden)
+        sym_rows = [r for r in rows if (r.get("symbol") or "").upper() == symbol.upper()]
+        pnl_debug.append(f"[PnL] symbol_rows_count={len(sym_rows)}")
+        for i, r in enumerate(sym_rows[:3]):
+            pnl_debug.append(
+                f"[PnL] sym_sample{i} time={r.get('time')} incomeType={r.get('incomeType')} "
+                f"side={r.get('positionSide') or r.get('posSide')} income={r.get('income')}"
+            )
         return None, pnl_debug
 
     pnl_debug.append(f"[PnL] summed_since={since} newest_time={newest_t} netpnl_sum={total}")
     return total, pnl_debug
-
 
 def generate_signature(secret_key: str, params: str) -> str:
     return hmac.new(secret_key.encode('utf-8'), params.encode('utf-8'), hashlib.sha256).hexdigest()
@@ -1203,14 +1204,13 @@ def webhook():
             print("DEBUG bot_nr:", bot_nr, type(bot_nr))
             print("DEBUG ma raw:", data.get("RENDER", {}).get("ma"), type(data.get("RENDER", {}).get("ma")))
             print("DEBUG ma int:", ma, type(ma))
-            close_ts = int(time.time() * 1000)   # <<< vor dem Close merken
             pnl_logs = []
-            ergebnis = close_open_position(api_key, secret_key, symbol, position_side)
-
-
-           
+            close_ts = int(time.time() * 1000)
             
-            for _ in range(10):  # bis zu ~5s warten (Income kann nachlaufen)
+            ergebnis = close_open_position(api_key, secret_key, symbol, position_side)
+            
+            last_pnl = None
+            for _ in range(10):
                 last_pnl, pnl_logs = fetch_netpnl_for_close(
                     api_key, secret_key, botname, symbol, position_side, close_ts, pnl_debug=pnl_logs
                 )
