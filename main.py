@@ -105,28 +105,21 @@ def signed_get(api_key: str, secret_key: str, endpoint: str, params_dict: dict):
     headers = {"X-BX-APIKEY": api_key}
     r = requests.get(url, headers=headers, timeout=10)
     return r.json()
-def fetch_last_closed_netpnl(api_key: str, secret_key: str, botname: str, symbol: str, position_side: str, pnl_debug=None):
-    """
-    Liefert den Nettogewinn (Realized PnL) der zuletzt geschlossenen Position für LONG/SHORT getrennt.
-    Wenn beim Close schon geschlossen: trotzdem OK, weil wir Income-History lesen.
-    """
+    
+def fetch_netpnl_for_close(api_key, secret_key, botname, symbol, position_side, since_ms, pnl_debug=None):
     if pnl_debug is None:
         pnl_debug = []
 
     side = position_side.upper()
     key = (botname, symbol, side)
 
+    # wir lesen ein Fenster nach dem Close, weil Income-Einträge leicht verzögert kommen können
     now_ms = int(time.time() * 1000)
-    start_ms = now_ms - 7 * 24 * 60 * 60 * 1000  # 7 Tage Rückblick (robust)
-
-    # BingX Income API: wir lassen incomeType bewusst weg und filtern lokal,
-    # weil die exakten incomeType-Strings je nach Konto/Region variieren können.
-    # (So ist es am stabilsten.)
     params = {
         "symbol": symbol,
-        "startTime": start_ms,
+        "startTime": max(since_ms - 2000, now_ms - 7 * 24 * 60 * 60 * 1000),
         "endTime": now_ms,
-        "limit": 100,
+        "limit": 200,
         "timestamp": now_ms
     }
 
@@ -137,22 +130,16 @@ def fetch_last_closed_netpnl(api_key: str, secret_key: str, botname: str, symbol
         return None, pnl_debug
 
     data = resp.get("data")
+    rows = data.get("list", []) if isinstance(data, dict) and "list" in data else (data or [])
 
-    # je nach API-Version kann "data" eine Liste sein oder ein Objekt mit "list"
-    if isinstance(data, dict) and "list" in data:
-        rows = data.get("list", [])
-    elif isinstance(data, list):
-        rows = data
-    else:
-        rows = []
-
-    # Filter: symbol + side + "realized" IncomeType
-    # IncomeType-Namen sind nicht immer identisch – wir matchen daher tolerant.
     def is_realized(it: str) -> bool:
         it = (it or "").upper()
         return ("REAL" in it and "PNL" in it) or ("REALIZED" in it)
 
-    candidates = []
+    total = 0.0
+    found_any = False
+    newest_t = 0
+
     for row in rows:
         if (row.get("symbol") or "").upper() != symbol.upper():
             continue
@@ -165,11 +152,15 @@ def fetch_last_closed_netpnl(api_key: str, secret_key: str, botname: str, symbol
         if not is_realized(it):
             continue
 
-        t = row.get("time") or row.get("timestamp")
+        t = row.get("time") or row.get("timestamp") or 0
         try:
             t = int(t)
         except Exception:
-            t = 0
+            continue
+
+        # nur neue Einträge seit Close
+        if t < since_ms:
+            continue
 
         income_val = row.get("income") or row.get("realizedPnl") or row.get("profit") or row.get("pnl")
         try:
@@ -177,23 +168,16 @@ def fetch_last_closed_netpnl(api_key: str, secret_key: str, botname: str, symbol
         except Exception:
             continue
 
-        candidates.append((t, income_val, row))
+        total += income_val
+        found_any = True
+        newest_t = max(newest_t, t)
 
-    if not candidates:
+    if not found_any:
         return None, pnl_debug
 
-    # neuesten Eintrag nehmen
-    candidates.sort(key=lambda x: x[0], reverse=True)
-    latest_t, latest_income, latest_row = candidates[0]
+    pnl_debug.append(f"[PnL] summed_since={since_ms} newest_time={newest_t} netpnl_sum={total}")
+    return total, pnl_debug
 
-    # optional: nur updaten, wenn neuer als letzter bekannter Income-Timestamp
-    last_ts = last_closed_income_ts.get(key, 0)
-    if latest_t >= last_ts:
-        last_closed_income_ts[key] = latest_t
-        last_closed_netpnl[key] = latest_income
-
-    pnl_debug.append(f"[PnL] latest_time={latest_t} netpnl={latest_income} incomeType={latest_row.get('incomeType')}")
-    return last_closed_netpnl.get(key), pnl_debug
 
 
 
@@ -1207,14 +1191,26 @@ def webhook():
             print("DEBUG ma int:", ma, type(ma))
             ergebnis = close_open_position(api_key, secret_key, symbol, position_side)
 
-            pnl_debug = []
+            pnl_logs = []
             last_pnl = None
-            for attempt in range(5):
-                last_pnl, pnl_debug = fetch_last_closed_netpnl(api_key, secret_key, botname, symbol, position_side, pnl_debug=pnl_debug)
+
+            close_ts = int(time.time() * 1000)   # <<< vor dem Close merken
+
+            
+            last_pnl = None
+            for _ in range(10):  # bis zu ~5s warten (Income kann nachlaufen)
+                last_pnl, pnl_logs = fetch_netpnl_for_close(
+                    api_key, secret_key, botname, symbol, position_side, close_ts, pnl_debug=pnl_logs
+                )
                 if last_pnl is not None:
                     break
                 time.sleep(0.5)
-        
+            
+            # speichern als "letzte geschlossene Position" (LONG/SHORT unabhängig)
+            key = (botname, symbol, position_side.upper())
+            if last_pnl is not None:
+                last_closed_netpnl[key] = last_pnl
+
             
             # Logs ausgeben
             print(ergebnis.get("logs", []))
@@ -1286,7 +1282,7 @@ def webhook():
                 "status": "position_closed",
                 "botname": botname,
                 "last_pnl ": last_pnl,
-                "pnl_debug": pnl_debug,
+                "pnl_debug": pnl_logs,
                 "logs": ergebnis.get("logs", []),
                 "result": ergebnis.get("result", None)
             })  # <-- alle Klammern geschlossen
