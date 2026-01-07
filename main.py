@@ -132,6 +132,38 @@ def fetch_income_window(api_key, secret_key, start_ms, end_ms, pnl_debug):
         return data
     return []
 
+def pick_closest_realized_time(rows, symbol, close_ts_ms, pnl_debug, max_before_ms=30*60*1000, max_after_ms=2*60*1000):
+    sym = symbol.upper().replace("-", "")
+    candidates = []
+
+    for r in rows:
+        if (r.get("symbol") or "").upper().replace("-", "") != sym:
+            continue
+        it = (r.get("incomeType") or "").upper()
+        if not ("REAL" in it and "PNL" in it):
+            continue
+
+        t = _norm_ms(r.get("time") or r.get("timestamp") or 0)
+        if not t:
+            continue
+
+        dt = t - close_ts_ms
+        # nur in sinnvollem Fenster zulassen
+        if dt < -max_before_ms or dt > max_after_ms:
+            continue
+
+        candidates.append((abs(dt), dt, t))
+
+    if not candidates:
+        pnl_debug.append("[PnL] closest_pick: no candidate in window")
+        return None
+
+    candidates.sort(key=lambda x: (x[0], x[1]))  # kleinste Abweichung, bei Gleichstand eher "nach" close
+    best = candidates[0]
+    pnl_debug.append(f"[PnL] closest_pick t0={best[2]} dt_ms={best[1]}")
+    return best[2]
+
+
 def pick_latest_realized_time(rows, symbol, pnl_debug):
     tmax = None
     for r in rows:
@@ -1308,48 +1340,38 @@ def webhook():
         if action == "close" and botname:
             # Position schließen
             pnl_logs = []
-            # 1) Vorheriger Stand
-            pre_end = int(time.time()*1000)
-            pre_rows = fetch_income_window(api_key, secret_key, pre_end - 60*60*1000, pre_end, pnl_logs)  # 60min reicht
+            # -------------------------------------------------
+            # 1) Letzten bekannten REALIZED_PNL-Zeitpunkt VOR dem Close merken
+            #    (damit wir erkennen, ob durch diesen Close etwas Neues entsteht)
+            # -------------------------------------------------
+            pre_end = int(time.time() * 1000)
+            pre_rows = fetch_income_window(
+                api_key,
+                secret_key,
+                pre_end - 60 * 60 * 1000,  # 60 Minuten zurück
+                pre_end,
+                pnl_logs
+            )
+        
             prev_t0 = pick_latest_realized_time(pre_rows, symbol, pnl_logs) or 0
             pnl_logs.append(f"[PnL] prev_t0_before_close={prev_t0}")
-            
-            # 2) Close Timestamp
-            close_ts = int(time.time()*1000)
-            
-            # 3) Close ausführen
+        
+            # -------------------------------------------------
+            # 2) Close-Timestamp (WICHTIG: VOR dem Close!)
+            # -------------------------------------------------
+            close_ts = int(time.time() * 1000)
+        
+            # -------------------------------------------------
+            # 3) Position schließen (oder Versuch – evtl. schon zu)
+            # -------------------------------------------------
             ergebnis = close_open_position(api_key, secret_key, symbol, position_side)
-
+        
+            # -------------------------------------------------
+            # 4) Auf NEUE REALIZED_PNL-Gruppe warten
+            #    → nur wenn wirklich durch diesen Close etwas geschlossen wurde
+            # -------------------------------------------------
             last_net = None
-            new_t0 = None
-            
-            for attempt in range(20):  # 20 * 0.5s = 10s
-                end_ms = int(time.time()*1000)
-            
-                # wichtig: end_ms liegt jetzt garantiert >= aktuelle Zeit
-                rows = fetch_income_window(api_key, secret_key, close_ts - 10*60*1000, end_ms, pnl_logs)
-            
-                t0 = pick_latest_realized_time(rows, symbol, pnl_logs)
-            
-                pnl_logs.append(f"[PnL] attempt={attempt+1} t0_now={t0} prev_t0={prev_t0} end_ms={end_ms}")
-            
-                if t0 and t0 > prev_t0:
-                    new_t0 = t0
-                    last_net = sum_close_group(rows, symbol, new_t0, pnl_logs, window_ms=20_000)
-                    if last_net is not None:
-                        break
-            
-                time.sleep(0.5)
-            
-            # Fallback: wenn Position schon vorher geschlossen war -> nimm einfach die letzte bekannte Gruppe
-            if last_net is None:
-                pnl_logs.append("[PnL] no new realized group detected -> fallback to latest group")
-                end_ms = int(time.time()*1000)
-                rows = fetch_income_window(api_key, secret_key, end_ms - 60*60*1000, end_ms, pnl_logs)
-                t0 = pick_latest_realized_time(rows, symbol, pnl_logs)
-                if t0:
-                    last_net = sum_close_group(rows, symbol, t0, pnl_logs, window_ms=20_000)
-
+            detected_t0 = None
             
             print("DEBUG close reached")
             print("DEBUG action:", action)
@@ -1358,23 +1380,69 @@ def webhook():
             print("DEBUG ma raw:", data.get("RENDER", {}).get("ma"), type(data.get("RENDER", {}).get("ma")))
             print("DEBUG ma int:", ma, type(ma))
             
-            
-            
-            #ergebnis = close_open_position(api_key, secret_key, symbol, position_side)
+            for attempt in range(20):  # 20 × 0.5s = max. 10 Sekunden warten
+        end_ms = int(time.time() * 1000)
 
-            
-            
-            # wir warten kurz, bis Income aktualisiert ist
-            last_net = None
-            for attempt in range(10):
-                end_ms = int(time.time()*1000)
-                rows = fetch_income_window(api_key, secret_key, close_ts - 10*60*1000, end_ms, pnl_logs)  # 10 min
-                t0 = pick_latest_realized_time(rows, symbol, pnl_logs)
-                if t0 is not None:
-                    last_net = sum_close_group(rows, symbol, t0, pnl_logs, window_ms=20_000)
-                    if last_net is not None:
-                        break
-                time.sleep(0.5)
+        rows = fetch_income_window(
+            api_key,
+            secret_key,
+            close_ts - 10 * 60 * 1000,  # 10 Minuten vor Close
+            end_ms,
+            pnl_logs
+        )
+
+        t0 = pick_latest_realized_time(rows, symbol, pnl_logs)
+        pnl_logs.append(
+            f"[PnL] attempt={attempt+1} t0_now={t0} prev_t0={prev_t0}"
+        )
+
+        # ✅ Nur wenn wirklich eine NEUE Schließung passiert ist
+        if t0 and t0 > prev_t0:
+            detected_t0 = t0
+            last_net = sum_close_group(
+                rows,
+                symbol,
+                detected_t0,
+                pnl_logs,
+                window_ms=20_000  # Fees können bis ~20s versetzt sein
+            )
+            break
+
+        time.sleep(0.5)
+    
+        # -------------------------------------------------
+        # 5) Fallback:
+        #    Wenn keine neue REALIZED_PNL entstanden ist,
+        #    dann war die Position beim Close schon zu →
+        #    also: "letzte geschlossene Position"
+        # -------------------------------------------------
+        if last_net is None:
+            pnl_logs.append("[PnL] no new realized group -> fallback to last closed position")
+    
+            end_ms = int(time.time() * 1000)
+            rows = fetch_income_window(
+                api_key,
+                secret_key,
+                end_ms - 60 * 60 * 1000,  # 60 Minuten
+                end_ms,
+                pnl_logs
+            )
+    
+            fallback_t0 = pick_latest_realized_time(rows, symbol, pnl_logs)
+            pnl_logs.append(f"[PnL] fallback_t0={fallback_t0}")
+    
+            if fallback_t0:
+                last_net = sum_close_group(
+                    rows,
+                    symbol,
+                    fallback_t0,
+                    pnl_logs,
+                    window_ms=20_000
+                )
+    
+        # -------------------------------------------------
+        # 6) Antwort
+        # -------------------------------------------------
 
             
             # Logs ausgeben
@@ -1446,8 +1514,7 @@ def webhook():
             return jsonify({
                 "status": "position_closed",
                 "botname": botname,
-                "last_pnl ": last_net,
-                "pnl_debug": pnl_logs,
+                "last_closed_netpnl": last_net,
                 "logs": ergebnis.get("logs", []),
                 "result": ergebnis.get("result", None)
             })  # <-- alle Klammern geschlossen
