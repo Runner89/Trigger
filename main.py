@@ -113,38 +113,44 @@ def _norm_ms(t):
         return 0
     return t * 1000 if t < 1_000_000_000_000 else t
 
-def fetch_last_close_bucket_net(api_key, secret_key, symbol, side, rows, pnl_debug):
-    # suche neuesten REALIZED_PNL
-    realized_rows = []
+def fetch_last_close_bucket_net(symbol, rows, pnl_debug, window_ms=10_000):
+    # 1) neuesten REALIZED_PNL finden
+    realized = []
     for r in rows:
         if (r.get("symbol") or "").upper() != symbol.upper():
             continue
         it = (r.get("incomeType") or r.get("type") or "").upper()
         if "REAL" in it and "PNL" in it:
-            realized_rows.append(r)
+            realized.append(r)
 
-    if not realized_rows:
+    if not realized:
         pnl_debug.append("[PnL] fallback: no REALIZED_PNL rows at all")
         return None
 
-    # newest by time
-    realized_rows.sort(key=lambda r: _norm_ms(r.get("time") or r.get("timestamp") or 0), reverse=True)
-    bucket_time = _norm_ms(realized_rows[0].get("time") or realized_rows[0].get("timestamp") or 0)
+    realized.sort(key=lambda r: _norm_ms(r.get("time") or r.get("timestamp") or 0), reverse=True)
+    t0 = _norm_ms(realized[0].get("time") or realized[0].get("timestamp") or 0)
 
-    # sum bucket: realized + trading fee (+ funding fee if same time)
-    bucket_sum = 0.0
+    # 2) alles Relevante im Zeitfenster summieren
+    def relevant(it: str) -> bool:
+        it = (it or "").upper()
+        return ("REAL" in it and "PNL" in it) or ("TRADING_FEE" in it) or ("FUNDING" in it and "FEE" in it)
+
+    total = 0.0
     used = 0
+    parts = []
+
+    lo, hi = t0 - window_ms, t0 + window_ms
+
     for r in rows:
         if (r.get("symbol") or "").upper() != symbol.upper():
             continue
 
-        # side ist in income rows oft None -> daher NICHT hart filtern
-        it = (r.get("incomeType") or r.get("type") or "").upper()
-        if not (("REAL" in it and "PNL" in it) or ("TRADING_FEE" in it) or ("FUNDING" in it and "FEE" in it)):
+        it = (r.get("incomeType") or r.get("type") or "")
+        if not relevant(it):
             continue
 
         t = _norm_ms(r.get("time") or r.get("timestamp") or 0)
-        if t != bucket_time:
+        if not (lo <= t <= hi):
             continue
 
         val = r.get("income") or r.get("realizedPnl") or r.get("profit") or r.get("pnl")
@@ -153,11 +159,15 @@ def fetch_last_close_bucket_net(api_key, secret_key, symbol, side, rows, pnl_deb
         except Exception:
             continue
 
-        bucket_sum += val
+        total += val
         used += 1
+        parts.append((t, (it or "").upper(), val))
 
-    pnl_debug.append(f"[PnL] fallback bucket_time={bucket_time} bucket_entries={used} bucket_net_sum={bucket_sum}")
-    return bucket_sum
+    parts.sort(key=lambda x: x[0], reverse=True)
+    pnl_debug.append(f"[PnL] fallback window t0={t0} window_ms=±{window_ms} entries={used} net_sum={total}")
+    pnl_debug.append(f"[PnL] fallback parts (top5)={parts[:5]}")
+    return total
+
 
 def fetch_netpnl_for_close(api_key, secret_key, botname, symbol, position_side, since_ms, pnl_debug=None):
     if pnl_debug is None:
@@ -228,9 +238,11 @@ def fetch_netpnl_for_close(api_key, secret_key, botname, symbol, position_side, 
         newest_t = max(newest_t, t)
 
     if not found:
-        pnl_debug.append(f"[PnL] no matches for symbol={symbol} side={side} since={since} -> fallback to last close bucket")
-        fb = fetch_last_close_bucket_net(api_key, secret_key, symbol, side, rows, pnl_debug)
+        pnl_debug.append(f"[PnL] no matches for symbol={symbol} side={side} since={since} -> fallback to last close window")
+        fb = fetch_last_close_bucket_net(symbol, rows, pnl_debug, window_ms=10_000)
         return fb, pnl_debug
+    
+
 
 
 def generate_signature(secret_key: str, params: str) -> str:
