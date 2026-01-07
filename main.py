@@ -1307,8 +1307,47 @@ def webhook():
         
         if action == "close" and botname:
             # Position schließen
-            pnl_logs = []
-            close_ts = int(time.time()*1000)     # ganz am Anfang
+            # 1) Vorheriger Stand
+            pre_end = int(time.time()*1000)
+            pre_rows = fetch_income_window(api_key, secret_key, pre_end - 60*60*1000, pre_end, pnl_logs)  # 60min reicht
+            prev_t0 = pick_latest_realized_time(pre_rows, symbol, pnl_logs) or 0
+            pnl_logs.append(f"[PnL] prev_t0_before_close={prev_t0}")
+            
+            # 2) Close Timestamp
+            close_ts = int(time.time()*1000)
+            
+            # 3) Close ausführen
+            ergebnis = close_open_position(api_key, secret_key, symbol, position_side)
+
+            last_net = None
+            new_t0 = None
+            
+            for attempt in range(20):  # 20 * 0.5s = 10s
+                end_ms = int(time.time()*1000)
+            
+                # wichtig: end_ms liegt jetzt garantiert >= aktuelle Zeit
+                rows = fetch_income_window(api_key, secret_key, close_ts - 10*60*1000, end_ms, pnl_logs)
+            
+                t0 = pick_latest_realized_time(rows, symbol, pnl_logs)
+            
+                pnl_logs.append(f"[PnL] attempt={attempt+1} t0_now={t0} prev_t0={prev_t0} end_ms={end_ms}")
+            
+                if t0 and t0 > prev_t0:
+                    new_t0 = t0
+                    last_net = sum_close_group(rows, symbol, new_t0, pnl_logs, window_ms=20_000)
+                    if last_net is not None:
+                        break
+            
+                time.sleep(0.5)
+            
+            # Fallback: wenn Position schon vorher geschlossen war -> nimm einfach die letzte bekannte Gruppe
+            if last_net is None:
+                pnl_logs.append("[PnL] no new realized group detected -> fallback to latest group")
+                end_ms = int(time.time()*1000)
+                rows = fetch_income_window(api_key, secret_key, end_ms - 60*60*1000, end_ms, pnl_logs)
+                t0 = pick_latest_realized_time(rows, symbol, pnl_logs)
+                if t0:
+                    last_net = sum_close_group(rows, symbol, t0, pnl_logs, window_ms=20_000)
 
             
             print("DEBUG close reached")
@@ -1320,7 +1359,7 @@ def webhook():
             
             
             
-            ergebnis = close_open_position(api_key, secret_key, symbol, position_side)
+            #ergebnis = close_open_position(api_key, secret_key, symbol, position_side)
 
             
             
