@@ -1098,12 +1098,14 @@ def webhook():
             logs.append(f"[DEBUG] base_order_times keys: {list(base_order_times.keys())}")
             base_time = base_order_times.get(botname)
 
+           
+
             # ✅ 1) base_time IMMER setzen
-            if base_time is None and firebase_secret:
-                base_time_str = firebase_lese_base_order_time(botname, firebase_secret)
-                if base_time_str:
-                    base_time = datetime.fromisoformat(base_time_str)
-                    base_order_times[botname] = base_time
+            
+            base_time_str = firebase_lese_base_order_time(botname, firebase_secret)
+            if base_time_str:
+                base_time = datetime.fromisoformat(base_time_str)
+                base_order_times[botname] = base_time
                         
             print("DEBUG close reached")
             print("DEBUG action:", action)
