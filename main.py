@@ -77,7 +77,6 @@ BALANCE_ENDPOINT = "/openApi/swap/v2/user/balance"
 ORDER_ENDPOINT = "/openApi/swap/v2/trade/order"
 PRICE_ENDPOINT = "/openApi/swap/v2/quote/price"
 OPEN_ORDERS_ENDPOINT = "/openApi/swap/v2/trade/openOrders"
-INCOME_ENDPOINT = "/openApi/swap/v2/user/income"
 FIREBASE_URL = os.environ.get("FIREBASE_URL", "")
 
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
@@ -91,6 +90,8 @@ aktueller_Bot = {}
 ma_Wert = {} 
 recovery_trade = {} 
 recovery_pending = {}
+last_closed_netpnl = {}   # key: (bot_nr:int, position_side:str) -> float
+last_closed_trade = {}
 
 
 def generate_signature(secret_key: str, params: str) -> str:
@@ -111,6 +112,85 @@ def firebase_speichere_base_order_time(botname, timestamp, firebase_secret):
     response = requests.put(url, json=data)
     return f"Base-Order-Zeit für {botname} gespeichert: {timestamp}, Status: {response.status_code}"
 
+def _to_float(x, default=0.0):
+    try:
+        if x is None:
+            return default
+        return float(x)
+    except Exception:
+        return default
+
+def get_last_closed_position_netpnl(api_key, secret_key, symbol, position_side, logs=None):
+    """
+    Holt den Nettogewinn (Net PnL) der zuletzt geschlossenen Position für symbol + position_side.
+    Funktioniert auch dann, wenn die Position bereits geschlossen ist.
+    """
+    endpoint = "/openApi/swap/v1/trade/positionHistory"
+
+    now_ms = int(time.time() * 1000)
+    start_ms = now_ms - 14 * 24 * 60 * 60 * 1000  # 14 Tage zurück (robust)
+
+    params = {
+        "symbol": symbol,
+        "startTime": start_ms,
+        "endTime": now_ms,
+        "limit": 100
+    }
+
+    resp = send_signed_request("GET", endpoint, api_key, secret_key, params)
+
+    if logs is not None:
+        logs.append(f"positionHistory resp: {resp}")
+
+    if not resp or resp.get("code") != 0:
+        return None, None  # keine Daten
+
+    rows = resp.get("data", []) or []
+    side = str(position_side).upper()
+
+    # Nur gewünschte Side
+    rows = [r for r in rows if str(r.get("positionSide", "")).upper() == side]
+
+    if not rows:
+        return None, None
+
+    # sortiere nach Close-Time (verschiedene mögliche Felder)
+    def _close_ts(r):
+        return int(
+            r.get("closeTime")
+            or r.get("updateTime")
+            or r.get("time")
+            or 0
+        )
+
+    rows.sort(key=_close_ts, reverse=True)
+    last = rows[0]
+
+    # bevorzugt: netProfit / netPnl
+    net = (
+        last.get("netProfit")
+        or last.get("netPnl")
+        or last.get("netPNL")
+    )
+
+    if net is not None:
+        return _to_float(net, None), last
+
+    # Fallback: realized - fees - funding
+    realized = (
+        last.get("realizedProfit")
+        or last.get("realisedProfit")
+        or last.get("realizedPnl")
+        or last.get("realisedPnl")
+        or last.get("pnl")
+        or last.get("profit")
+    )
+    fee = last.get("fee") or last.get("commission") or last.get("tradingFee")
+    funding = last.get("fundingFee") or last.get("funding")
+
+    net_calc = _to_float(realized, 0.0) - _to_float(fee, 0.0) - _to_float(funding, 0.0)
+    return net_calc, last
+
 def get_current_price(symbol: str):
     url = f"{BASE_URL}{PRICE_ENDPOINT}?symbol={symbol}"
     response = requests.get(url)
@@ -119,70 +199,6 @@ def get_current_price(symbol: str):
         return float(data["data"]["price"])
     else:
         return None
-
-def _norm(s: str) -> str:
-    return (s or "").strip().upper().replace("-", "_")
-
-def _to_float(x, default=0.0):
-    try: return float(x)
-    except: return default
-
-def _to_int(x, default=0):
-    try: return int(x)
-    except: return default
-
-def get_position_net_pnl_since_base(api_key, secret_key, symbol, base_time_dt, logs=None, lookahead_ms=0):
-    """
-    Nettopnl der Position (Session) seit base_time_dt.
-    Wenn BingX REALIZED_PNL schon netto liefert, reicht REALIZED_PNL.
-    Falls Fees/Funding separat kommen, kannst du sie zusätzlich addieren (siehe unten).
-    """
-    if base_time_dt is None:
-        if logs is not None:
-            logs.append("[PNL] base_time_dt ist None -> kann PnL nicht bestimmen")
-        return None
-
-    start_ms = int(base_time_dt.timestamp() * 1000)
-    end_ms = int(time.time() * 1000) + int(lookahead_ms)
-
-    resp = send_signed_request("GET", INCOME_ENDPOINT, api_key, secret_key, {
-        "symbol": symbol,
-        "startTime": start_ms,
-        "endTime": end_ms,
-        "limit": 200
-    })
-
-    if logs is not None:
-        logs.append(f"[PNL] income resp code={resp.get('code')} msg={resp.get('msg')}")
-
-    if resp.get("code") != 0:
-        return None
-
-    rows = resp.get("data", []) or []
-
-    realized = 0.0
-    fees_funding = 0.0
-
-    for r in rows:
-        t = _norm(r.get("incomeType") or r.get("type"))
-        amt = _to_float(r.get("income", r.get("amount", 0)))
-
-        # a) Realized PnL
-        if t in ("REALIZED_PNL", "REALIZEDPNL", "REALIZED_PROFIT", "CLOSE_PNL"):
-            realized += amt
-
-        # b) Optional: falls Gebühren/Funding separat erscheinen:
-        if t in ("TRADING_FEE", "TRADE_FEE", "FUNDING_FEE"):
-            fees_funding += amt
-
-    # Wenn REALIZED_PNL bei dir bereits "netto" ist, gib realized zurück.
-    # Wenn du siehst, dass Fees/Funding NICHT enthalten sind, nimm (realized + fees_funding).
-    net = realized  # oder: realized + fees_funding
-
-    if logs is not None:
-        logs.append(f"[PNL] realized={realized} fees_funding={fees_funding} -> net={net}")
-
-    return net
 
 def close_open_position(api_key, secret_key, symbol, position_side="LONG"):
     """
@@ -600,21 +616,14 @@ def berechne_durchschnittspreis(käufe):
 def firebase_lese_base_order_time(botname, firebase_secret):
     try:
         url = f"{FIREBASE_URL}/base_order_time/{botname}.json?auth={firebase_secret}"
-        r = requests.get(url)
-        r.raise_for_status()
-        data = r.json()
-
-        # ✅ Wenn als String gespeichert
-        if isinstance(data, str):
-            return data
-
-        # ✅ Wenn als Dict gespeichert
-        if isinstance(data, dict):
-            return data.get("base_order_time")
-
+        response = requests.get(url)
+        response.raise_for_status()
+        data = response.json()
+        if data:
+            return data.get("base_order_time")  # ISO-Zeitstring
         return None
     except Exception as e:
-        print(f"Fehler beim Lesen base_order_time für {botname}: {e}")
+        print(f"Fehler beim Lesen des Base-Order-Zeitpunkts aus Firebase für {botname}: {e}")
         return None
     
 def set_leverage(api_key, secret_key, symbol, leverage, position_side="LONG"):
@@ -1093,20 +1102,6 @@ def webhook():
         
         if action == "close" and botname:
             # Position schließen
-            
-            logs = []
-            logs.append(f"[DEBUG] base_order_times keys: {list(base_order_times.keys())}")
-            base_time = base_order_times.get(botname)
-
-           
-
-            # ✅ 1) base_time IMMER setzen
-            
-            base_time_str = firebase_lese_base_order_time(botname, firebase_secret)
-            if base_time_str:
-                base_time = datetime.fromisoformat(base_time_str)
-                base_order_times[botname] = base_time
-                        
             print("DEBUG close reached")
             print("DEBUG action:", action)
             print("DEBUG botname:", botname)
@@ -1116,11 +1111,18 @@ def webhook():
             ergebnis = close_open_position(api_key, secret_key, symbol, position_side)
 
 
-            time.sleep(1.2)  # falls jetzt erst geschlossen wurde
-            
-            net_pnl = get_position_net_pnl_since_base(api_key, secret_key, symbol, base_time, logs=logs)
-
-
+            # ✅ IMMER danach: letzten Net PnL holen (auch wenn Position schon 0 war)
+            position_side_u = str(position_side).strip().upper()
+            bot_nr_i = int(bot_nr)
+        
+            netpnl, last_row = get_last_closed_position_netpnl(
+                api_key, secret_key, symbol, position_side_u, logs=logs
+            )
+        
+            key = (bot_nr_i, position_side_u)
+            if netpnl is not None:
+                last_closed_netpnl[key] = netpnl
+                last_closed_trade[key] = last_row
             
             # Logs ausgeben
             print(ergebnis.get("logs", []))
@@ -1170,10 +1172,6 @@ def webhook():
                 print("DEBUG firebase_setze_ma_wert:", res)
                 ma_Wert[bot_nr] = 1
                 print(f"MA-Wert auf 1 gesetzt für Bot_Nr {bot_nr}")
-
-
-
-            
                 
             
             
@@ -1195,7 +1193,7 @@ def webhook():
             return jsonify({
                 "status": "position_closed",
                 "botname": botname,
-                "net_pnl": net_pnl,
+                "last_closed_netpnl": last_closed_netpnl.get(key),  # ✅ genau das willst du
                 "logs": ergebnis.get("logs", []),
                 "result": ergebnis.get("result", None)
             })  # <-- alle Klammern geschlossen
