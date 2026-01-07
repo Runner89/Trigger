@@ -113,6 +113,66 @@ def _norm_ms(t):
         return 0
     return t * 1000 if t < 1_000_000_000_000 else t
 
+def fetch_income_window(api_key, secret_key, start_ms, end_ms, pnl_debug):
+    params = {
+        "startTime": start_ms,
+        "endTime": end_ms,
+        "limit": 1000,
+        "timestamp": int(time.time()*1000)
+    }
+    resp = signed_get(api_key, secret_key, INCOME_ENDPOINT, params)
+    pnl_debug.append(f"[PnL] income_window start={start_ms} end={end_ms} code={resp.get('code')} msg={resp.get('msg')}")
+    if resp.get("code") != 0:
+        return []
+
+    data = resp.get("data")
+    if isinstance(data, dict) and "list" in data:
+        return data.get("list") or []
+    if isinstance(data, list):
+        return data
+    return []
+
+def pick_latest_realized_time(rows, symbol, pnl_debug):
+    tmax = None
+    for r in rows:
+        if (r.get("symbol") or "").upper().replace("-", "") != symbol.upper().replace("-", ""):
+            continue
+        it = (r.get("incomeType") or "").upper()
+        if not ("REAL" in it and "PNL" in it):
+            continue
+        t = _norm_ms(r.get("time") or r.get("timestamp") or 0)
+        if not t:
+            continue
+        if tmax is None or t > tmax:
+            tmax = t
+    pnl_debug.append(f"[PnL] latest_realized_time_in_window={tmax}")
+    return tmax
+
+def sum_close_group(rows, symbol, t0, pnl_debug, window_ms=20_000):
+    lo, hi = t0 - window_ms, t0 + window_ms
+    total = 0.0
+    parts = []
+    for r in rows:
+        if (r.get("symbol") or "").upper().replace("-", "") != symbol.upper().replace("-", ""):
+            continue
+        it = (r.get("incomeType") or "").upper()
+        if not (("REAL" in it and "PNL" in it) or it == "TRADING_FEE" or ("FUNDING" in it and "FEE" in it)):
+            continue
+        t = _norm_ms(r.get("time") or r.get("timestamp") or 0)
+        if not (lo <= t <= hi):
+            continue
+        try:
+            val = float(r.get("income"))
+        except Exception:
+            continue
+        total += val
+        parts.append((t, it, val))
+
+    parts.sort(key=lambda x: x[0], reverse=True)
+    pnl_debug.append(f"[PnL] group_sum t0={t0} window=±{window_ms}ms entries={len(parts)} total={total}")
+    pnl_debug.append(f"[PnL] group_parts_top10={parts[:10]}")
+    return total if parts else None
+
 def fetch_last_close_bucket_net(symbol, rows, pnl_debug, window_ms=10_000):
     # 1) neuesten REALIZED_PNL finden
     realized = []
@@ -1248,7 +1308,7 @@ def webhook():
         if action == "close" and botname:
             # Position schließen
             pnl_logs = []
-            close_ts = int(time.time() * 1000)
+            close_ts = int(time.time()*1000)     # ganz am Anfang
 
             
             print("DEBUG close reached")
@@ -1264,19 +1324,17 @@ def webhook():
 
             
             
-            last_pnl = None
-            for _ in range(10):
-                last_pnl, pnl_logs = fetch_netpnl_for_close(
-                    api_key, secret_key, botname, symbol, position_side, close_ts, pnl_debug=pnl_logs
-                )
-                if last_pnl is not None:
-                    break
+            # wir warten kurz, bis Income aktualisiert ist
+            last_net = None
+            for attempt in range(10):
+                end_ms = int(time.time()*1000)
+                rows = fetch_income_window(api_key, secret_key, close_ts - 10*60*1000, end_ms, pnl_logs)  # 10 min
+                t0 = pick_latest_realized_time(rows, symbol, pnl_logs)
+                if t0 is not None:
+                    last_net = sum_close_group(rows, symbol, t0, pnl_logs, window_ms=20_000)
+                    if last_net is not None:
+                        break
                 time.sleep(0.5)
-            
-            # speichern als "letzte geschlossene Position" (LONG/SHORT unabhängig)
-            key = (botname, symbol, position_side.upper())
-            if last_pnl is not None:
-                last_closed_netpnl[key] = last_pnl
 
             
             # Logs ausgeben
