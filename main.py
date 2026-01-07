@@ -122,13 +122,16 @@ def _to_float(x, default=0.0):
 
 def get_last_closed_position_netpnl(api_key, secret_key, symbol, position_side, logs=None):
     """
-    Holt den Nettogewinn (Net PnL) der zuletzt geschlossenen Position für symbol + position_side.
-    Funktioniert auch dann, wenn die Position bereits geschlossen ist.
+    Holt NetPnL der zuletzt geschlossenen Position für (symbol, position_side).
+    Robust: retry, und gibt Debug-Infos in logs zurück.
     """
-    endpoint = "/openApi/swap/v1/trade/positionHistory"
+    side = str(position_side).strip().upper()
+
+    # ✅ v2 (wichtig!)
+    endpoint = "/openApi/swap/v2/trade/positionHistory"
 
     now_ms = int(time.time() * 1000)
-    start_ms = now_ms - 14 * 24 * 60 * 60 * 1000  # 14 Tage zurück (robust)
+    start_ms = now_ms - 30 * 24 * 60 * 60 * 1000  # 30 Tage
 
     params = {
         "symbol": symbol,
@@ -137,59 +140,50 @@ def get_last_closed_position_netpnl(api_key, secret_key, symbol, position_side, 
         "limit": 100
     }
 
-    resp = send_signed_request("GET", endpoint, api_key, secret_key, params)
+    # Retry: History ist manchmal erst kurz nach Close verfügbar
+    for attempt in range(1, 6):
+        resp = send_signed_request("GET", endpoint, api_key, secret_key, dict(params))
 
-    if logs is not None:
-        logs.append(f"positionHistory resp: {resp}")
+        if logs is not None:
+            logs.append(f"[PnL] attempt={attempt} endpoint={endpoint} resp_code={resp.get('code')} msg={resp.get('msg')}")
+            # Vorsicht: kann groß sein – aber zum Debuggen hilfreich:
+            logs.append(f"[PnL] resp_data_preview={str(resp.get('data'))[:500]}")
 
-    if not resp or resp.get("code") != 0:
-        return None, None  # keine Daten
+        if not resp or resp.get("code") != 0:
+            time.sleep(0.25)
+            continue
 
-    rows = resp.get("data", []) or []
-    side = str(position_side).upper()
+        rows = resp.get("data", []) or []
 
-    # Nur gewünschte Side
-    rows = [r for r in rows if str(r.get("positionSide", "")).upper() == side]
+        # Falls API ohne positionSide liefert, NICHT hart filtern
+        # sonst filtern wir sauber:
+        if rows and isinstance(rows[0], dict) and ("positionSide" in rows[0]):
+            rows = [r for r in rows if str(r.get("positionSide", "")).upper() == side]
 
-    if not rows:
-        return None, None
+        if not rows:
+            time.sleep(0.25)
+            continue
 
-    # sortiere nach Close-Time (verschiedene mögliche Felder)
-    def _close_ts(r):
-        return int(
-            r.get("closeTime")
-            or r.get("updateTime")
-            or r.get("time")
-            or 0
-        )
+        # sortiere nach closeTime/updateTime
+        def _ts(r):
+            return int(r.get("closeTime") or r.get("updateTime") or r.get("time") or 0)
 
-    rows.sort(key=_close_ts, reverse=True)
-    last = rows[0]
+        rows.sort(key=_ts, reverse=True)
+        last = rows[0]
 
-    # bevorzugt: netProfit / netPnl
-    net = (
-        last.get("netProfit")
-        or last.get("netPnl")
-        or last.get("netPNL")
-    )
+        # mögliche Feldnamen:
+        net = last.get("netProfit") or last.get("netPnl") or last.get("netPNL")
+        if net is not None:
+            return _to_float(net, None), last
 
-    if net is not None:
-        return _to_float(net, None), last
+        realized = last.get("realizedProfit") or last.get("realisedProfit") or last.get("pnl") or last.get("profit")
+        fee = last.get("fee") or last.get("commission") or last.get("tradingFee")
+        funding = last.get("fundingFee") or last.get("funding")
 
-    # Fallback: realized - fees - funding
-    realized = (
-        last.get("realizedProfit")
-        or last.get("realisedProfit")
-        or last.get("realizedPnl")
-        or last.get("realisedPnl")
-        or last.get("pnl")
-        or last.get("profit")
-    )
-    fee = last.get("fee") or last.get("commission") or last.get("tradingFee")
-    funding = last.get("fundingFee") or last.get("funding")
+        net_calc = _to_float(realized, 0.0) - _to_float(fee, 0.0) - _to_float(funding, 0.0)
+        return net_calc, last
 
-    net_calc = _to_float(realized, 0.0) - _to_float(fee, 0.0) - _to_float(funding, 0.0)
-    return net_calc, last
+    return None, None
 
 def get_current_price(symbol: str):
     url = f"{BASE_URL}{PRICE_ENDPOINT}?symbol={symbol}"
@@ -1114,15 +1108,15 @@ def webhook():
             # ✅ IMMER danach: letzten Net PnL holen (auch wenn Position schon 0 war)
             position_side_u = str(position_side).strip().upper()
             bot_nr_i = int(bot_nr)
-        
-            netpnl, last_row = get_last_closed_position_netpnl(
-                api_key, secret_key, symbol, position_side_u, logs=logs
-            )
-        
             key = (bot_nr_i, position_side_u)
+            
+            pnl_logs = []
+            netpnl, last_row = get_last_closed_position_netpnl(api_key, secret_key, symbol, position_side_u, logs=pnl_logs)
+            
             if netpnl is not None:
                 last_closed_netpnl[key] = netpnl
                 last_closed_trade[key] = last_row
+        
             
             # Logs ausgeben
             print(ergebnis.get("logs", []))
@@ -1193,7 +1187,8 @@ def webhook():
             return jsonify({
                 "status": "position_closed",
                 "botname": botname,
-                "last_closed_netpnl": last_closed_netpnl.get(key),  # ✅ genau das willst du
+                "last_closed_netpnl": last_closed_netpnl.get(key),
+                "pnl_debug": pnl_logs,
                 "logs": ergebnis.get("logs", []),
                 "result": ergebnis.get("result", None)
             })  # <-- alle Klammern geschlossen
