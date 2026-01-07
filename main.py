@@ -113,6 +113,52 @@ def _norm_ms(t):
         return 0
     return t * 1000 if t < 1_000_000_000_000 else t
 
+def fetch_last_close_bucket_net(api_key, secret_key, symbol, side, rows, pnl_debug):
+    # suche neuesten REALIZED_PNL
+    realized_rows = []
+    for r in rows:
+        if (r.get("symbol") or "").upper() != symbol.upper():
+            continue
+        it = (r.get("incomeType") or r.get("type") or "").upper()
+        if "REAL" in it and "PNL" in it:
+            realized_rows.append(r)
+
+    if not realized_rows:
+        pnl_debug.append("[PnL] fallback: no REALIZED_PNL rows at all")
+        return None
+
+    # newest by time
+    realized_rows.sort(key=lambda r: _norm_ms(r.get("time") or r.get("timestamp") or 0), reverse=True)
+    bucket_time = _norm_ms(realized_rows[0].get("time") or realized_rows[0].get("timestamp") or 0)
+
+    # sum bucket: realized + trading fee (+ funding fee if same time)
+    bucket_sum = 0.0
+    used = 0
+    for r in rows:
+        if (r.get("symbol") or "").upper() != symbol.upper():
+            continue
+
+        # side ist in income rows oft None -> daher NICHT hart filtern
+        it = (r.get("incomeType") or r.get("type") or "").upper()
+        if not (("REAL" in it and "PNL" in it) or ("TRADING_FEE" in it) or ("FUNDING" in it and "FEE" in it)):
+            continue
+
+        t = _norm_ms(r.get("time") or r.get("timestamp") or 0)
+        if t != bucket_time:
+            continue
+
+        val = r.get("income") or r.get("realizedPnl") or r.get("profit") or r.get("pnl")
+        try:
+            val = float(val)
+        except Exception:
+            continue
+
+        bucket_sum += val
+        used += 1
+
+    pnl_debug.append(f"[PnL] fallback bucket_time={bucket_time} bucket_entries={used} bucket_net_sum={bucket_sum}")
+    return bucket_sum
+
 def fetch_netpnl_for_close(api_key, secret_key, botname, symbol, position_side, since_ms, pnl_debug=None):
     if pnl_debug is None:
         pnl_debug = []
@@ -182,19 +228,10 @@ def fetch_netpnl_for_close(api_key, secret_key, botname, symbol, position_side, 
         newest_t = max(newest_t, t)
 
     if not found:
-        pnl_debug.append(f"[PnL] no matches for symbol={symbol} side={side} since={since}")
-        # zum Debug: 3 samples vom richtigen symbol (falls vorhanden)
-        sym_rows = [r for r in rows if (r.get("symbol") or "").upper() == symbol.upper()]
-        pnl_debug.append(f"[PnL] symbol_rows_count={len(sym_rows)}")
-        for i, r in enumerate(sym_rows[:3]):
-            pnl_debug.append(
-                f"[PnL] sym_sample{i} time={r.get('time')} incomeType={r.get('incomeType')} "
-                f"side={r.get('positionSide') or r.get('posSide')} income={r.get('income')}"
-            )
-        return None, pnl_debug
+        pnl_debug.append(f"[PnL] no matches for symbol={symbol} side={side} since={since} -> fallback to last close bucket")
+        fb = fetch_last_close_bucket_net(api_key, secret_key, symbol, side, rows, pnl_debug)
+        return fb, pnl_debug
 
-    pnl_debug.append(f"[PnL] summed_since={since} newest_time={newest_t} netpnl_sum={total}")
-    return total, pnl_debug
 
 def generate_signature(secret_key: str, params: str) -> str:
     return hmac.new(secret_key.encode('utf-8'), params.encode('utf-8'), hashlib.sha256).hexdigest()
@@ -1198,14 +1235,16 @@ def webhook():
         
         if action == "close" and botname:
             # Position schließen
+            pnl_logs = []
+            close_ts = int(time.time() * 1000)
             print("DEBUG close reached")
             print("DEBUG action:", action)
             print("DEBUG botname:", botname)
             print("DEBUG bot_nr:", bot_nr, type(bot_nr))
             print("DEBUG ma raw:", data.get("RENDER", {}).get("ma"), type(data.get("RENDER", {}).get("ma")))
             print("DEBUG ma int:", ma, type(ma))
-            pnl_logs = []
-            close_ts = int(time.time() * 1000)
+            
+            
             
             ergebnis = close_open_position(api_key, secret_key, symbol, position_side)
             
