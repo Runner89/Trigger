@@ -600,14 +600,21 @@ def berechne_durchschnittspreis(käufe):
 def firebase_lese_base_order_time(botname, firebase_secret):
     try:
         url = f"{FIREBASE_URL}/base_order_time/{botname}.json?auth={firebase_secret}"
-        response = requests.get(url)
-        response.raise_for_status()
-        data = response.json()
-        if data:
-            return data.get("base_order_time")  # ISO-Zeitstring
+        r = requests.get(url)
+        r.raise_for_status()
+        data = r.json()
+
+        # ✅ Wenn als String gespeichert
+        if isinstance(data, str):
+            return data
+
+        # ✅ Wenn als Dict gespeichert
+        if isinstance(data, dict):
+            return data.get("base_order_time")
+
         return None
     except Exception as e:
-        print(f"Fehler beim Lesen des Base-Order-Zeitpunkts aus Firebase für {botname}: {e}")
+        print(f"Fehler beim Lesen base_order_time für {botname}: {e}")
         return None
     
 def set_leverage(api_key, secret_key, symbol, leverage, position_side="LONG"):
@@ -1088,10 +1095,16 @@ def webhook():
             # Position schließen
             
             logs = []
-            
-            # ✅ 1) base_time IMMER setzen
+            logs.append(f"[DEBUG] base_order_times keys: {list(base_order_times.keys())}")
             base_time = base_order_times.get(botname)
-            
+
+            # ✅ 1) base_time IMMER setzen
+            if base_time is None and firebase_secret:
+                base_time_str = firebase_lese_base_order_time(botname, firebase_secret)
+                if base_time_str:
+                    base_time = datetime.fromisoformat(base_time_str)
+                    base_order_times[botname] = base_time
+                        
             print("DEBUG close reached")
             print("DEBUG action:", action)
             print("DEBUG botname:", botname)
