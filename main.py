@@ -120,73 +120,69 @@ def get_current_price(symbol: str):
     else:
         return None
 
-def _norm_income_type(x: str) -> str:
-    return (x or "").strip().upper().replace("-", "_")
+def _norm(s: str) -> str:
+    return (s or "").strip().upper().replace("-", "_")
 
 def _to_float(x, default=0.0):
-    try:
-        return float(x)
-    except Exception:
-        return default
+    try: return float(x)
+    except: return default
 
 def _to_int(x, default=0):
-    try:
-        return int(x)
-    except Exception:
-        return default
+    try: return int(x)
+    except: return default
 
-def get_last_closed_pnl(api_key, secret_key, symbol, position_side, lookback_ms=7*24*3600*1000):
+def get_position_net_pnl_since_base(api_key, secret_key, symbol, base_time_dt, logs=None, lookahead_ms=0):
     """
-    #Gibt den PnL (REALIZED_PNL) der zuletzt geschlossenen Position für die Side zurück.
-    #lookback_ms: Zeitraum rückwärts, in dem gesucht wird (Default 7 Tage).
+    Nettopnl der Position (Session) seit base_time_dt.
+    Wenn BingX REALIZED_PNL schon netto liefert, reicht REALIZED_PNL.
+    Falls Fees/Funding separat kommen, kannst du sie zusätzlich addieren (siehe unten).
     """
-    now_ms = int(time.time() * 1000)
-    start_ms = now_ms - int(lookback_ms)
+    if base_time_dt is None:
+        if logs is not None:
+            logs.append("[PNL] base_time_dt ist None -> kann PnL nicht bestimmen")
+        return None
 
-    resp = send_signed_request(
-        "GET",
-        INCOME_ENDPOINT,
-        api_key,
-        secret_key,
-        {
-            "symbol": symbol,
-            "startTime": start_ms,
-            "limit": 200
-        }
-    )
+    start_ms = int(base_time_dt.timestamp() * 1000)
+    end_ms = int(time.time() * 1000) + int(lookahead_ms)
+
+    resp = send_signed_request("GET", INCOME_ENDPOINT, api_key, secret_key, {
+        "symbol": symbol,
+        "startTime": start_ms,
+        "endTime": end_ms,
+        "limit": 200
+    })
+
+    if logs is not None:
+        logs.append(f"[PNL] income resp code={resp.get('code')} msg={resp.get('msg')}")
 
     if resp.get("code") != 0:
         return None
 
     rows = resp.get("data", []) or []
-    ps = str(position_side).strip().upper()
 
-    # Kandidaten: REALIZED_PNL für diese Side
-    candidates = []
+    realized = 0.0
+    fees_funding = 0.0
+
     for r in rows:
-        t = _norm_income_type(r.get("incomeType") or r.get("type"))
-        if t not in ("REALIZED_PNL", "REALIZEDPNL"):
-            continue
+        t = _norm(r.get("incomeType") or r.get("type"))
+        amt = _to_float(r.get("income", r.get("amount", 0)))
 
-        # Wenn vorhanden: Side filtern (BingX liefert je nach Endpoint/Version z.B. positionSide/side)
-        row_ps = (r.get("positionSide") or r.get("side") or "").upper()
-        if row_ps and row_ps != ps:
-            continue
+        # a) Realized PnL
+        if t in ("REALIZED_PNL", "REALIZEDPNL", "REALIZED_PROFIT", "CLOSE_PNL"):
+            realized += amt
 
-        candidates.append(r)
+        # b) Optional: falls Gebühren/Funding separat erscheinen:
+        if t in ("TRADING_FEE", "TRADE_FEE", "FUNDING_FEE"):
+            fees_funding += amt
 
-    if not candidates:
-        return None
+    # Wenn REALIZED_PNL bei dir bereits "netto" ist, gib realized zurück.
+    # Wenn du siehst, dass Fees/Funding NICHT enthalten sind, nimm (realized + fees_funding).
+    net = realized  # oder: realized + fees_funding
 
-    def row_time(r):
-        return _to_int(r.get("time", r.get("timestamp", 0)))
+    if logs is not None:
+        logs.append(f"[PNL] realized={realized} fees_funding={fees_funding} -> net={net}")
 
-    last = max(candidates, key=row_time)
-
-    pnl_value = _to_float(last.get("income", last.get("amount", 0)))
-    pnl_time = row_time(last)
-
-    return {"pnl": pnl_value, "time": pnl_time, "row": last}
+    return net
 
 def close_open_position(api_key, secret_key, symbol, position_side="LONG"):
     """
@@ -1099,9 +1095,9 @@ def webhook():
             ergebnis = close_open_position(api_key, secret_key, symbol, position_side)
 
 
-            time.sleep(1.2)  # damit der REALIZED_PNL sicher da ist, falls jetzt erst geschlossen wurde
+            time.sleep(1.2)  # falls jetzt erst geschlossen wurde
             
-            last_pnl = get_last_closed_pnl(api_key, secret_key, symbol, "LONG")
+            net_pnl = get_position_net_pnl_since_base(api_key, secret_key, symbol, base_time, logs=logs)
 
 
             
@@ -1178,8 +1174,7 @@ def webhook():
             return jsonify({
                 "status": "position_closed",
                 "botname": botname,
-                "last_closed_pnl": None if last_pnl is None else last_pnl["pnl"],
-                "last_closed_pnl_time": None if last_pnl is None else last_pnl["time"],
+                "net_pnl": net_pnl,
                 "logs": ergebnis.get("logs", []),
                 "result": ergebnis.get("result", None)
             })  # <-- alle Klammern geschlossen
