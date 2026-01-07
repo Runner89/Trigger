@@ -1406,7 +1406,7 @@ def webhook():
             return jsonify({
                 "status": "position_closed",
                 "botname": botname,
-                "last_pnl ": last_pnl,
+                "last_pnl ": last_net,
                 "pnl_debug": pnl_logs,
                 "logs": ergebnis.get("logs", []),
                 "result": ergebnis.get("result", None)
