@@ -1286,7 +1286,7 @@ def webhook():
                 "status": "position_closed",
                 "botname": botname,
                 "last_pnl ": last_pnl,
-                "pnl_debug": pnl_logs,
+                "pnl_debug": pnl_debug,
                 "logs": ergebnis.get("logs", []),
                 "result": ergebnis.get("result", None)
             })  # <-- alle Klammern geschlossen
