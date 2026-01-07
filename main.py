@@ -1203,15 +1203,13 @@ def webhook():
             print("DEBUG bot_nr:", bot_nr, type(bot_nr))
             print("DEBUG ma raw:", data.get("RENDER", {}).get("ma"), type(data.get("RENDER", {}).get("ma")))
             print("DEBUG ma int:", ma, type(ma))
+            close_ts = int(time.time() * 1000)   # <<< vor dem Close merken
+            pnl_logs = []
             ergebnis = close_open_position(api_key, secret_key, symbol, position_side)
 
-            pnl_logs = []
-            last_pnl = None
 
-            close_ts = int(time.time() * 1000)   # <<< vor dem Close merken
-
+           
             
-            last_pnl = None
             for _ in range(10):  # bis zu ~5s warten (Income kann nachlaufen)
                 last_pnl, pnl_logs = fetch_netpnl_for_close(
                     api_key, secret_key, botname, symbol, position_side, close_ts, pnl_debug=pnl_logs
