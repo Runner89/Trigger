@@ -1262,7 +1262,7 @@ def webhook():
             
             ergebnis = close_open_position(api_key, secret_key, symbol, position_side)
 
-            time.sleep(2.5)
+            
             
             last_pnl = None
             for _ in range(10):
