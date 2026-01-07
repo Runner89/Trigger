@@ -1,9 +1,11 @@
+#31.12.2025
 #nicht vyn
 
 
-#Es wird zu Beginn geprüft, welcher Bot aktiv ist. Der Code wird nur ausgeführt, wenn der Botname identisch ist, wie der Botname aus dem Webhook.-> Es gibt immer nur einen vollständigen Trade.
+#Botname wird ignoriert.
 #Market Order mit Hebel wird gesetzt
-#Hebel muss in BINGX selber vorher eingestellt werden
+#Hebel wird in BINGX über den Code angepasst
+#Falls Hebel bei LONG 1 ist, wird 0.7% des Durschnittspreises der Liqudationspreis genommen, da es bei LONG 1x kein Liquidationspreis gibt, bei SHORT 1x gibt es einen Liquidationspreis
 #Preis, welcher im JSON übergeben wurde, wird in Firebase gespeichert
 #der gewichtete Durchschnittspreis wird von Firebase berechnet und entsprechend die Sell-Limit Order gesetzt
 #Bei Alarm wird angegeben, ab welcher SO ein Alarm via Telegramm gesendet wird
@@ -19,7 +21,10 @@
 #vyn Alarm kann benutzt werden (inkl. close-Signal) und dann folgende Alarmnachricht
 #Wenn Position auf BINGX schon gelöscht wurde und bei Traidingview noch nicht, wird der nächste increase-Befehl ignoriert
 #Nach x Stunden seit BO oder nach x SO wird die Sell-Limit-Order auf x % gesetzt
-#
+# bot_nr = Chart
+# botname = botname
+# Endet der recovery Trade auch im SL, wird eine Telegramm-Nachricht gesendet
+
 
 #https://......../webhook
 # action wird vom vyn genommen
@@ -34,17 +39,20 @@
 #    "sell_percentage": 2.5,
 #    "price": {{close}},
 #    "leverage": 1,
+#    "leverage2": 1, Hebel nach SL
 #    "FIREBASE_SECRET": "",
 #    "alarm": 1,
 #    "pyramiding": 8, grösser als 0, wird nicht berücksichtig für Berechnung, es wird für BO gerechnet: (verfügbares Guthaben  - Sicherheit) * bo_factor
 #    "sicherheit": 96, Sicherheit muss nicht mal Hebel gerechnet werden, wird im Code gemacht
 #    "usdt_factor": 1.4,
 #    "bo_factor": 0.001, wie viel Prozent beträgt die BO im Verhältnis zum verfügbaren Guthaben unter Berücksichtung der Gewichtung aller SO
+#    "bo_factor2": 0.001, wie viel Prozent beträgt die BO im Verhältnis zum verfügbaren Guthaben unter Berücksichtung der Gewichtung aller SO nach einem SL
 #    "base_time2": "", darf nur beim Testen Inhalt enthalten, 2025-08-22T11:22:37.986015+00:00, simulierter Zeitpunkt der BO
 #    "after_h": 48, nach x Stunden seit BO wird Sell-Limit-Order beim nächsten Kauf auf x Prozent gesetzt oder
 #    "after_so": 14, nach x SO wird Sell-Limit-Order beim nächsten Kauf auf x Prozent gesetzt
 #    "sell_percentage2": 0.5,
 #    "sl": 10, Stop Loss bei x Prozent setzen
+#    "ma": 1, bei StopLoss muss ma 1 sein. Ansonsten 0
 #    "beenden": "nein" wenn ja, wird keine neue Position nach dem Schliessen der aktuellen Position geöffnet
 #    }}
 
@@ -69,6 +77,7 @@ BALANCE_ENDPOINT = "/openApi/swap/v2/user/balance"
 ORDER_ENDPOINT = "/openApi/swap/v2/trade/order"
 PRICE_ENDPOINT = "/openApi/swap/v2/quote/price"
 OPEN_ORDERS_ENDPOINT = "/openApi/swap/v2/trade/openOrders"
+INCOME_ENDPOINT = "/openApi/swap/v2/user/income"
 FIREBASE_URL = os.environ.get("FIREBASE_URL", "")
 
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
@@ -79,6 +88,10 @@ status_fuer_alle = {}
 alarm_counter = {}
 base_order_times = {}
 aktueller_Bot = {}
+ma_Wert = {} 
+recovery_trade = {} 
+recovery_pending = {}
+
 
 def generate_signature(secret_key: str, params: str) -> str:
     return hmac.new(secret_key.encode('utf-8'), params.encode('utf-8'), hashlib.sha256).hexdigest()
@@ -106,6 +119,74 @@ def get_current_price(symbol: str):
         return float(data["data"]["price"])
     else:
         return None
+
+def _norm_income_type(x: str) -> str:
+    return (x or "").strip().upper().replace("-", "_")
+
+def _to_float(x, default=0.0):
+    try:
+        return float(x)
+    except Exception:
+        return default
+
+def _to_int(x, default=0):
+    try:
+        return int(x)
+    except Exception:
+        return default
+
+def get_last_closed_pnl(api_key, secret_key, symbol, position_side, lookback_ms=7*24*3600*1000):
+    """
+    #Gibt den PnL (REALIZED_PNL) der zuletzt geschlossenen Position für die Side zurück.
+    #lookback_ms: Zeitraum rückwärts, in dem gesucht wird (Default 7 Tage).
+    """
+    now_ms = int(time.time() * 1000)
+    start_ms = now_ms - int(lookback_ms)
+
+    resp = send_signed_request(
+        "GET",
+        INCOME_ENDPOINT,
+        api_key,
+        secret_key,
+        {
+            "symbol": symbol,
+            "startTime": start_ms,
+            "limit": 200
+        }
+    )
+
+    if resp.get("code") != 0:
+        return None
+
+    rows = resp.get("data", []) or []
+    ps = str(position_side).strip().upper()
+
+    # Kandidaten: REALIZED_PNL für diese Side
+    candidates = []
+    for r in rows:
+        t = _norm_income_type(r.get("incomeType") or r.get("type"))
+        if t not in ("REALIZED_PNL", "REALIZEDPNL"):
+            continue
+
+        # Wenn vorhanden: Side filtern (BingX liefert je nach Endpoint/Version z.B. positionSide/side)
+        row_ps = (r.get("positionSide") or r.get("side") or "").upper()
+        if row_ps and row_ps != ps:
+            continue
+
+        candidates.append(r)
+
+    if not candidates:
+        return None
+
+    def row_time(r):
+        return _to_int(r.get("time", r.get("timestamp", 0)))
+
+    last = max(candidates, key=row_time)
+
+    pnl_value = _to_float(last.get("income", last.get("amount", 0)))
+    pnl_time = row_time(last)
+
+    return {"pnl": pnl_value, "time": pnl_time, "row": last}
 
 def close_open_position(api_key, secret_key, symbol, position_side="LONG"):
     """
@@ -467,6 +548,41 @@ def firebase_lese_kaufpreise(botname, firebase_secret):
         print(f"Fehler beim Lesen der Kaufpreise: {e}")
         return []
 
+
+def firebase_setze_ma_wert(bot_nr, wert, firebase_secret):
+    try:
+        url = f"{FIREBASE_URL}/MA/{bot_nr}.json?auth={firebase_secret}"
+        response = requests.put(url, json=wert)  # <-- sauber
+        return f"MA/{bot_nr} = {wert} gesetzt. Status: {response.status_code}, Body: {response.text}"
+    except Exception as e:
+        return f"Exception beim Setzen von MA/{bot_nr}: {e}"
+
+def firebase_loesche_ma_bot(bot_nr, firebase_secret):
+    try:
+        url = f"{FIREBASE_URL}/MA/{bot_nr}.json?auth={firebase_secret}"
+        response = requests.delete(url)
+
+        if response.status_code == 200:
+            return f"MA/{bot_nr} erfolgreich gelöscht."
+        else:
+            return f"Fehler beim Löschen von MA/{bot_nr}: Status {response.status_code}"
+
+    except Exception as e:
+        return f"Exception beim Löschen von MA/{bot_nr}: {e}"
+
+def firebase_lese_ma_wert(bot_nr, firebase_secret):
+    try:
+        url = f"{FIREBASE_URL}/MA/{bot_nr}.json?auth={firebase_secret}"
+        r = requests.get(url, timeout=5)
+        if r.status_code != 200:
+            return 0
+        val = r.json()
+        return int(val) if val is not None else 0
+    except Exception as e:
+        print(f"Fehler beim Lesen von MA/{bot_nr}: {e}")
+        return 0
+        
+
 def berechne_durchschnittspreis(käufe):
     if not käufe:
         return None
@@ -500,20 +616,15 @@ def firebase_lese_base_order_time(botname, firebase_secret):
     
 def set_leverage(api_key, secret_key, symbol, leverage, position_side="LONG"):
     endpoint = "/openApi/swap/v2/trade/leverage"
-    
-    # mappe positionSide auf side für Hebel-Setzung
-    side_map = {
-        "LONG": "BUY",
-        "SHORT": "SELL"
-    }
-    
+
     params = {
         "symbol": symbol,
         "leverage": int(leverage),
-        "positionSide": position_side.upper(),
-        "side": side_map.get(position_side.upper())  # korrektes Side-Value setzen
+        "side": position_side.upper()  # LONG oder SHORT
     }
+
     return send_signed_request("POST", endpoint, api_key, secret_key, params)
+
 
 ### SHORT Funktionen
 # === Hilfsfunktionen ===
@@ -673,16 +784,15 @@ def SHORT_sende_telegram_nachricht(botname, text):
         return f"Telegram Fehler: {e}"
 
 # === Order-Funktionen (SHORT-optimiert) ===
-def SHORT_set_leverage(api_key, secret_key, symbol, leverage, position_side="SHORT"):
-    # position_side must be "SHORT" here; map side accordingly
+def SHORT_set_leverage(api_key, secret_key, symbol, leverage, position_side="LONG"):
     endpoint = "/openApi/swap/v2/trade/leverage"
-    side_map = {"LONG": "BUY", "SHORT": "SELL"}
+
     params = {
         "symbol": symbol,
         "leverage": int(leverage),
-        "positionSide": position_side.upper(),
-        "side": side_map.get(position_side.upper())
+        "side": position_side.upper()  # LONG oder SHORT
     }
+
     return send_signed_request("POST", endpoint, api_key, secret_key, params)
 
 def SHORT_place_market_order(api_key, secret_key, symbol, usdt_amount, position_side="SHORT"):
@@ -921,7 +1031,10 @@ def webhook():
     global status_fuer_alle
     global alarm_counter
     global base_order_times
-    global aktueller_Bot
+    global aktueller_Bot    
+    global ma_Wert
+    global recovery_trade
+    global recovery_pending
 
     data = request.json
     logs = []
@@ -949,7 +1062,7 @@ def webhook():
         # Eingabewerte
         pyramiding = float(data.get("RENDER", {}).get("pyramiding", 1))  #float(data.get("pyramiding", 1))
         leverageB = float(data.get("RENDER", {}).get("leverage", 1))     #float(data.get("leverage", 1))
-        sicherheit = float(data.get("RENDER", {}).get("sicherheit", 0) * leverageB)    #float(data.get("sicherheit", 0) * leverageB)
+        sicherheit = float(data.get("RENDER", {}).get("sicherheit", 0))  #* leverageB)    #float(data.get("sicherheit", 0) * leverageB)
         sell_percentage = data.get("RENDER", {}).get("sell_percentage")    #data.get("sell_percentage")
         api_key = data.get("RENDER", {}).get("api_key")    #data.get("api_key")
         secret_key = data.get("RENDER", {}).get("secret_key")   #data.get("secret_key")
@@ -958,6 +1071,7 @@ def webhook():
         price_from_webhook = data.get("RENDER", {}).get("price")    #data.get("price")
         usdt_factor = float(data.get("RENDER", {}).get("usdt_factor", 1))    #float(data.get("usdt_factor", 1))
         bo_factor = float(data.get("RENDER", {}).get("bo_factor", 0.0001))    #float(data.get("bo_factor", 0.0001))
+        bo_factor2 = float(data.get("RENDER", {}).get("bo_factor2", 0.0001))    #float(data.get("bo_factor", 0.0001))
         action = data.get("vyn", {}).get("action", "").lower()    #KOMMT VON VYN     data.get("action", "").lower()
         base_time2 = data.get("RENDER", {}).get("base_time2")
         after_h = data.get("RENDER", {}).get("after_h")
@@ -966,48 +1080,30 @@ def webhook():
         beenden = data.get("RENDER", {}).get("beenden", "nein")
         sl = data.get("RENDER", {}).get("sl")
         bot_nr = data.get("RENDER", {}).get("bot_nr")
+        ma = int(data.get("RENDER", {}).get("ma", 0))
+        leverage2 = int(data.get("RENDER", {}).get("leverage2", 0))
+        
 
-       # Check: Offene SHORT-Position
-        # ------------------------------
-
-        if aktueller_Bot:
-            if bot_nr not in aktueller_Bot:
-                try:
-                    anderer_bot_aktiv = firebase_bot_is_active(bot_nr, botname, firebase_secret)
-                    if anderer_bot_aktiv:
-                        logs.append(f"Bot {botname} ignoriert – anderer Bot aktiv in Firebase")
-                        return jsonify({
-                            "status": "different_bot_active_in_firebase",
-                            "botname": botname,
-                            "logs": logs
-                        })
-                    else:
-                        # Bot ist frei → hinzufügen
-                        aktueller_Bot[bot_nr] = botname
-                        logs.append(f"Bot {botname} mit Nummer {bot_nr} wurde zur globalen Variable hinzugefügt")
-                except Exception as e:
-                    logs.append(f"Fehler beim Prüfen von aktueller_Bot in Firebase: {e}")
-                    return jsonify({
-                        "error": True,
-                        "msg": "Fehler bei Firebase aktueller_Bot Prüfung",
-                        "logs": logs
-                    })
-            else:
-                if aktueller_Bot[bot_nr] == botname:
-                    logs.append(f"Bot {botname} mit Nummer {bot_nr} ist identisch in der globalen Variable")
-                else:
-                    logs.append(f"Bot {botname} mit Nummer {bot_nr} ist nicht identisch")
-                    return jsonify({
-                        "status": "different_bot_active",
-                        "botname": botname,
-                        "logs": logs
-                    })
+      
 
    
         
         if action == "close" and botname:
             # Position schließen
+            print("DEBUG close reached")
+            print("DEBUG action:", action)
+            print("DEBUG botname:", botname)
+            print("DEBUG bot_nr:", bot_nr, type(bot_nr))
+            print("DEBUG ma raw:", data.get("RENDER", {}).get("ma"), type(data.get("RENDER", {}).get("ma")))
+            print("DEBUG ma int:", ma, type(ma))
             ergebnis = close_open_position(api_key, secret_key, symbol, position_side)
+
+
+            time.sleep(1.2)  # damit der REALIZED_PNL sicher da ist, falls jetzt erst geschlossen wurde
+            
+            last_pnl = get_last_closed_pnl(api_key, secret_key, symbol, "LONG")
+
+
             
             # Logs ausgeben
             print(ergebnis.get("logs", []))
@@ -1022,6 +1118,46 @@ def webhook():
             if bot_nr in aktueller_Bot and aktueller_Bot[bot_nr] == botname:
                 del aktueller_Bot[bot_nr]  # Eintrag löschen
                 print(f"Bot {botname} mit Nummer {bot_nr} wurde aus der globalen Variable gelöscht")
+
+            position_side = str(position_side).strip().upper()
+            bot_nr = int(bot_nr)
+            key = (bot_nr, position_side)
+            
+            # Wenn diese Side als Recovery lief und im SL endet -> Telegram + kompletter Reset
+            if recovery_trade.get(key) == "ja" and ma == 1:
+                sende_telegram_nachricht(
+                    botname,
+                    f"⚠️ Recovery-Trade im StopLoss beendet (close). bot_nr={bot_nr}, side={position_side}"
+                )
+            
+                # ✅ Recovery komplett beenden
+                recovery_trade.pop(key, None)
+                recovery_pending.pop(bot_nr, None)
+            
+                # ✅ Zurück zu normalem Bot (MA aus)
+                firebase_setze_ma_wert(bot_nr, 0, firebase_secret)
+                ma_Wert[bot_nr] = 0
+            
+            else:
+                # Recovery-Flag dieser Side bei jedem close aufräumen (falls gesetzt)
+                recovery_trade.pop(key, None)
+            
+                # Wenn SL bei einem NICHT-Recovery-Trade -> Recovery für nächsten Trade "armen"
+                if ma == 1:
+                    recovery_pending[bot_nr] = True
+                
+                
+            print(f"MA-Wert für Bot_Nr = {ma}")    
+            if ma == 1:
+                res = firebase_setze_ma_wert(bot_nr, 1, firebase_secret)
+                print("DEBUG firebase_setze_ma_wert:", res)
+                ma_Wert[bot_nr] = 1
+                print(f"MA-Wert auf 1 gesetzt für Bot_Nr {bot_nr}")
+
+
+
+            
+                
             
             
             # Kaufpreise löschen (Firebase oder lokal)
@@ -1032,20 +1168,95 @@ def webhook():
                     logs.append(firebase_loesche_ordergroesse(botname, firebase_secret))
                     logs.append(firebase_loesche_base_order_time(botname, firebase_secret))
                     logs.append(firebase_delete_aktueller_bot(bot_nr, firebase_secret))
+
                     
                     print("\n".join(logs))
                 except Exception as e:
                     print(f"Fehler beim Löschen von Kaufpreisen/Ordergrößen für {botname}: {e}")
     
-                 # **Hier ein Response zurückgeben**
-                return jsonify({
-                    "status": "position_closed",
-                    "botname": botname,
-                    "logs": ergebnis.get("logs", []),
-                    "result": ergebnis.get("result", None)
-                })  # <-- alle Klammern geschlossen
+             # **Hier ein Response zurückgeben**
+            return jsonify({
+                "status": "position_closed",
+                "botname": botname,
+                "last_closed_pnl": None if last_pnl is None else last_pnl["pnl"],
+                "last_closed_pnl_time": None if last_pnl is None else last_pnl["time"],
+                "logs": ergebnis.get("logs", []),
+                "result": ergebnis.get("result", None)
+            })  # <-- alle Klammern geschlossen
         else:
-    
+
+
+
+
+             # === Hebel NUR vor echter Base Order setzen ===
+            position_size, _, _ = get_current_position(
+                api_key,
+                secret_key,
+                symbol,
+                position_side,
+                logs
+            )
+            
+            if position_size == 0 and action != "increase":
+                try:
+
+                    if bot_nr in ma_Wert:
+                        ma_aktiv = ma_Wert.get(bot_nr, 0)
+                        logs.append(f"MA aus RAM gelesen: {ma_aktiv} (bot_nr={bot_nr})")
+                
+                    # 2) falls nicht vorhanden → Firebase
+                    else:
+                        ma_aktiv = firebase_lese_ma_wert(bot_nr, firebase_secret)
+                        logs.append(f"MA aus Firebase gelesen: {ma_aktiv} (bot_nr={bot_nr})")
+                
+                    # 3) wenn MA aktiv → Hebel NICHT setzen
+                    if ma_aktiv == 1:
+                        leverageB = leverage2
+            
+                        logs.append(
+                            f"Hebel wurde geändert, da MA=1 "
+                            f"(bot_nr={bot_nr}, position_size={position_size})"
+                        )
+                    # sauber abbrechen → kein Hebel, aber weiter im Code
+                        pass
+                    else:
+                        
+                        logs.append("Hebel auf {leverageB} gesetzt")
+
+                    
+                    logs.append(
+                        f"Setze Hebel VOR Base Order auf {leverageB}x "
+                        f"(position_size={position_size})"
+                    )
+            
+                    leverage_response = set_leverage(
+                        api_key,
+                        secret_key,
+                        symbol,
+                        leverageB,
+                        position_side
+                    )
+            
+                    logs.append(f"Hebel-Response: {leverage_response}")
+            
+                    time.sleep(0.2)  # BingX Sync
+            
+                    if leverage_response.get("code") != 0:
+                        raise Exception(leverage_response)
+            
+                except Exception as e:
+                    logs.append(f"❌ Hebel konnte nicht gesetzt werden: {e}")
+                    return jsonify({
+                        "error": True,
+                        "msg": "Hebel konnte nicht gesetzt werden",
+                        "logs": logs
+                    })
+            else:
+                logs.append(
+                    f"Hebel NICHT gesetzt "
+                    f"(position_size={position_size}, action={action})"
+                )
+
             
     
             available_usdt = 0.0
@@ -1065,14 +1276,23 @@ def webhook():
                 logs.append(f"Fehler bei Balance-Abfrage: {e}")
                 available_usdt = None
         
-            # 1. Hebel setzen
-            try:
-                logs.append(f"Setze Hebel auf {leverageB} für {symbol} ({position_side})...")
-                leverage_response = set_leverage(api_key, secret_key, symbol, leverageB, position_side)
-                logs.append(f"Hebel gesetzt: {leverage_response}")
-            except Exception as e:
-                logs.append(f"Fehler beim Setzen des Hebels: {e}")
-        
+
+
+            
+
+
+
+
+
+
+
+
+
+
+
+
+
+            
             # 2. Offene Orders abrufen
             open_orders = {}
             try:
@@ -1151,6 +1371,7 @@ def webhook():
                         "logs": logs
                     })
                 else:
+
             
                     status_fuer_alle[botname] = "OK"
                     alarm_counter[botname] = -1
@@ -1161,10 +1382,62 @@ def webhook():
                     if botname in saved_usdt_amounts:
                         del saved_usdt_amounts[botname]
                         logs.append(f"Ordergröße aus Cache für {botname} gelöscht (erste Order)")
-                
+
+
+                    balance_response = get_futures_balance(api_key, secret_key)
+                    
+                    balance_data = balance_response.get("data", {}).get("balance", {})
+                    
+                    available_margin = float(balance_data.get("availableMargin", 0))
+                    position_margin = float(balance_data.get("usedMargin", 0))
+                    
+                    account_size = available_margin + position_margin
+
+                    # === BO-Faktor abhängig von MA bestimmen (NUR Baseorder) ===
+                    if bot_nr in ma_Wert:
+                        ma_aktiv = ma_Wert.get(bot_nr, 0)
+                        logs.append(f"MA aus RAM gelesen: {ma_aktiv} (bot_nr={bot_nr})")
+                    else:
+                        ma_aktiv = firebase_lese_ma_wert(bot_nr, firebase_secret)
+                        logs.append(f"MA aus Firebase gelesen: {ma_aktiv} (bot_nr={bot_nr})")
+
+                    position_side = str(position_side).strip().upper()
+                    bot_nr = int(bot_nr)
+                    
+                    if ma_aktiv == 1:
+                        bo_factor = bo_factor2
+                    
+                        # ✅ nur wenn zuvor ein SL passiert ist -> das ist wirklich der Recovery-Trade
+                        if recovery_pending.get(bot_nr) is True:
+                            recovery_trade[(bot_nr, position_side)] = "ja"
+                            recovery_pending.pop(bot_nr, None)
+                            logs.append(f"Recovery aktiviert für {(bot_nr, position_side)}")
+                            logs.append(f"bo_factor2 verwendet (MA=1): {bo_factor2}")
+                        else:
+                            # optional: verhindert falsche Recovery-Markierung
+                            logs.append("MA=1 aber kein recovery_pending -> Recovery NICHT markiert")
+                    
+                    else:
+                        bo_factor = bo_factor
+                        logs.append(f"bo_factor verwendet (MA=0): {bo_factor}")
+
+                    firebase_setze_ma_wert(bot_nr, 0, firebase_secret)
+                    ma_Wert[bot_nr] = 0
+
+
+                    logs.append(f"RAW balance response: {balance_response}")
+                    logs.append(f"Accountgrösse: {account_size}")
+                    logs.append(f"Verfügbare Marge: {available_margin}")
+                    logs.append(f"Position Marge: {position_margin}")
+                                        
                     if available_usdt is not None and pyramiding > 0:
                         # Erste Order bleibt unverändert
-                        usdt_amount = max(((available_usdt - sicherheit) * bo_factor), 0)    #max(((available_usdt - sicherheit) / pyramiding), 0)
+                        #usdt_amount = max(((available_usdt - sicherheit) * bo_factor), 0)    #max(((available_usdt - sicherheit) / pyramiding), 0)
+                        #usdt_amount = max((account_size - sicherheit) * bo_factor, 0)
+                        margin_budget = max((account_size - sicherheit) * bo_factor, 0)   # das ist jetzt Margin
+                        usdt_amount   = margin_budget * leverageB                         # das ist Positionswert
+                        saved_usdt_amounts[botname] = usdt_amount
+
                         saved_usdt_amounts[botname] = usdt_amount
                         logs.append(f"Erste Ordergröße berechnet: {usdt_amount}")
                     
@@ -1216,6 +1489,17 @@ def webhook():
             # 5. Positionsgröße und Liquidationspreis ermitteln
             try:
                 sell_quantity, positions_raw, liquidation_price = get_current_position(api_key, secret_key, symbol, position_side, logs)
+                
+                # ✅ Fallback: LONG + Hebel 1 → "Pseudo-Liquidationspreis" = 20% unter avgPrice
+                for pos in positions_raw:
+                    if pos.get("symbol") == symbol and pos.get("positionSide", "").upper() == position_side.upper():
+                        avg_price = float(pos.get("avgPrice", 0)) or float(pos.get("averagePrice", 0))
+                                                                   
+                if position_side == "LONG" and int(leverageB) == 1:
+                    liquidation_price = avg_price * 0.70 
+                    logs.append(
+                        f"LONG 1x erkannt → pseudo liquidation_price = {liquidation_price} (20% unter avgPrice {avg_price})"
+                    )
         
                 if sell_quantity == 0:
                     executed_qty_str = order_response.get("data", {}).get("order", {}).get("executedQty")
@@ -1251,7 +1535,8 @@ def webhook():
                 except Exception as e:
                     logs.append(f"Fehler beim Speichern des Kaufpreises: {e}")
                     status_fuer_alle[botname] = "Fehler"
-        
+            
+            
             # 8. Durchschnittspreis bestimmen
             durchschnittspreis = None
             kaufpreise = []
@@ -1538,14 +1823,17 @@ def webhook():
     
         # Weitere parameter
         pyramiding = float(data.get("RENDER", {}).get("pyramiding", 1))
+        leverageB = float(data.get("RENDER", {}).get("leverage", 1))     #float(data.get("leverage", 1))
+        sicherheit = float(data.get("RENDER", {}).get("sicherheit", 0)) # * leverageB)    #float(data.get("sicherheit", 0) * leverageB)
         leverage = float(data.get("RENDER", {}).get("leverage", 1))
         sicherheit_param = float(data.get("RENDER", {}).get("sicherheit", 0))
         # Hinweis: in vielen deiner bisherigen Codes wurde Sicherheiten mit Hebel multipliziert -> beibehalten falls gewünscht
-        sicherheit = sicherheit_param * leverage
+        ## sicherheit = sicherheit_param * leverage
         sell_percentage = data.get("RENDER", {}).get("sell_percentage")
         price_from_webhook = data.get("RENDER", {}).get("price")
         usdt_factor = float(data.get("RENDER", {}).get("usdt_factor", 1))
         bo_factor = float(data.get("RENDER", {}).get("bo_factor", 0.0001))
+        bo_factor2 = float(data.get("RENDER", {}).get("bo_factor2", 0.0001))
         action = data.get("vyn", {}).get("action", "").lower()
         base_time2 = data.get("RENDER", {}).get("base_time2")
         after_h = data.get("RENDER", {}).get("after_h", 48)
@@ -1554,6 +1842,8 @@ def webhook():
         beenden = data.get("RENDER", {}).get("beenden", "nein")
         sl = data.get("RENDER", {}).get("sl")
         bot_nr = data.get("RENDER", {}).get("bot_nr")
+        ma = int(data.get("RENDER", {}).get("ma", 0))
+        leverage2 = int(data.get("RENDER", {}).get("leverage2", 0))
         
         
     
@@ -1562,48 +1852,26 @@ def webhook():
     
             # Check Offene LONG-Position
         # ------------------------------
-      
-        
-        if aktueller_Bot:
-            if bot_nr not in aktueller_Bot:
-                try:
-                    anderer_bot_aktiv = firebase_bot_is_active(bot_nr, botname, firebase_secret)
-                    if anderer_bot_aktiv:
-                        logs.append(f"Bot {botname} ignoriert – anderer Bot aktiv in Firebase")
-                        return jsonify({
-                            "status": "different_bot_active_in_firebase",
-                            "botname": botname,
-                            "logs": logs
-                        })
-                    else:
-                        # Bot ist frei → hinzufügen
-                        aktueller_Bot[bot_nr] = botname
-                        logs.append(f"Bot {botname} mit Nummer {bot_nr} wurde zur globalen Variable hinzugefügt")
-                except Exception as e:
-                    logs.append(f"Fehler beim Prüfen von aktueller_Bot in Firebase: {e}")
-                    return jsonify({
-                        "error": True,
-                        "msg": "Fehler bei Firebase aktueller_Bot Prüfung",
-                        "logs": logs
-                    })
-            else:
-                if aktueller_Bot[bot_nr] == botname:
-                    logs.append(f"Bot {botname} mit Nummer {bot_nr} ist identisch in der globalen Variable")
-                else:
-                    logs.append(f"Bot {botname} mit Nummer {bot_nr} ist nicht identisch")
-                    return jsonify({
-                        "status": "different_bot_active",
-                        "botname": botname,
-                        "logs": logs
-                    })
-
-   
+       
 
     
         # action == "close" -> sofort close der SHORT position
         if action == "close":
+
+            # Position schließen
+            print("DEBUG close reached")
+            print("DEBUG action:", action)
+            print("DEBUG botname:", botname)
+            print("DEBUG bot_nr:", bot_nr, type(bot_nr))
+            print("DEBUG ma raw:", data.get("RENDER", {}).get("ma"), type(data.get("RENDER", {}).get("ma")))
+            print("DEBUG ma int:", ma, type(ma))
             ergebnis = SHORT_close_open_position(api_key, secret_key, symbol, position_side)
-            # reset cache für diesen bot
+            
+            # Logs ausgeben
+            print(ergebnis.get("logs", []))
+            print(ergebnis.get("result", None))
+            
+            # Nur die Daten für diesen Bot zurücksetzen
             saved_usdt_amounts.pop(botname, None)
             status_fuer_alle.pop(botname, None)
             alarm_counter.pop(botname, None)
@@ -1612,6 +1880,41 @@ def webhook():
             if bot_nr in aktueller_Bot and aktueller_Bot[bot_nr] == botname:
                 del aktueller_Bot[bot_nr]  # Eintrag löschen
                 print(f"Bot {botname} mit Nummer {bot_nr} wurde aus der globalen Variable gelöscht")
+
+            position_side = str(position_side).strip().upper()
+            bot_nr = int(bot_nr)
+            key = (bot_nr, position_side)
+            
+            # Wenn diese Side als Recovery lief und im SL endet -> Telegram + kompletter Reset
+            if recovery_trade.get(key) == "ja" and ma == 1:
+                sende_telegram_nachricht(
+                    botname,
+                    f"⚠️ Recovery-Trade im StopLoss beendet (close). bot_nr={bot_nr}, side={position_side}"
+                )
+            
+                # ✅ Recovery komplett beenden
+                recovery_trade.pop(key, None)
+                recovery_pending.pop(bot_nr, None)
+            
+                # ✅ Zurück zu normalem Bot (MA aus)
+                firebase_setze_ma_wert(bot_nr, 0, firebase_secret)
+                ma_Wert[bot_nr] = 0
+            
+            else:
+                # Recovery-Flag dieser Side bei jedem close aufräumen (falls gesetzt)
+                recovery_trade.pop(key, None)
+            
+                # Wenn SL bei einem NICHT-Recovery-Trade -> Recovery für nächsten Trade "armen"
+                if ma == 1:
+                    recovery_pending[bot_nr] = True
+
+
+            print(f"MA-Wert für Bot_Nr = {ma}")    
+            if ma == 1:
+                res = firebase_setze_ma_wert(bot_nr, 1, firebase_secret)
+                print("DEBUG firebase_setze_ma_wert:", res)
+                ma_Wert[bot_nr] = 1
+                print(f"MA-Wert auf 1 gesetzt für Bot_Nr {bot_nr}")
             
             # optional: firebase löschen
             if firebase_secret:
@@ -1638,24 +1941,90 @@ def webhook():
             balance_response = SHORT_get_futures_balance(api_key, secret_key)
             logs.append(f"Balance Response: {balance_response}")
             if balance_response.get("code") == 0:
-                available_margin = float(balance_response.get("data", {}).get("balance", {}).get("availableMargin", 0))
-                available_usdt = available_margin * leverage
-                logs.append(f"Freies USDT Guthaben (mit Hebel): {available_usdt}")
+                balance_data_temp = float(balance_response.get("data", {}).get("balance", {}).get("availableMargin", 0))
+                available_usdt = balance_data_temp * leverageB
+                logs.append(f"Freies USDT Guthaben: {available_usdt}")
             else:
                 logs.append("Fehler beim Abrufen der Balance.")
         except Exception as e:
             logs.append(f"Fehler bei Balance-Abfrage: {e}")
             SHORT_sende_telegram_nachricht(botname, f"❌❌❌ Keine Verbindung zu BingX bei Balance-Abfrage für Bot: {botname}")            
             available_usdt = None
+
+        
+
+
+        # === SHORT: Hebel NUR vor echter Base Order setzen ===
+        position_size, _, _ = get_current_position(
+            api_key,
+            secret_key,
+            symbol,
+            "SHORT",
+            logs
+        )
+
+        if position_size == 0 and action != "increase":
+            try:
+
+                if bot_nr in ma_Wert:
+                    ma_aktiv = ma_Wert.get(bot_nr, 0)
+                    logs.append(f"MA aus RAM gelesen: {ma_aktiv} (bot_nr={bot_nr})")
+            
+                # 2) falls nicht vorhanden → Firebase
+                else:
+                    ma_aktiv = firebase_lese_ma_wert(bot_nr, firebase_secret)
+                    logs.append(f"MA aus Firebase gelesen: {ma_aktiv} (bot_nr={bot_nr})")
+            
+                # 3) wenn MA aktiv → Hebel NICHT setzen
+                if ma_aktiv == 1:
+                    leverageB = leverage2
+                    logs.append(
+                        f"Hebel wurde geändert, da MA=1 "
+                        f"(bot_nr={bot_nr}, position_size={position_size})"
+                    )
+                # sauber abbrechen → kein Hebel, aber weiter im Code
+                    pass
+                else:
+                    
+                    logs.append("Hebel auf {leverageB} gesetzt")
+
+                
+                logs.append(
+                    f"Setze Hebel VOR Base Order auf {leverageB}x "
+                    f"(position_size={position_size})"
+                )
+        
+                leverage_response = set_leverage(
+                    api_key,
+                    secret_key,
+                    symbol,
+                    leverageB,
+                    position_side
+                )
+        
+                logs.append(f"Hebel-Response: {leverage_response}")
+
+        
+                time.sleep(0.2)
+        
+                if leverage_response.get("code") != 0:
+                    raise Exception(leverage_response)
+        
+            except Exception as e:
+                logs.append(f"❌ [SHORT] Hebel konnte nicht gesetzt werden: {e}")
+                return jsonify({
+                    "error": True,
+                    "msg": "SHORT Hebel konnte nicht gesetzt werden",
+                    "logs": logs
+                })
+        else:
+            logs.append(
+                f"[SHORT] Hebel NICHT gesetzt "
+                f"(position_size={position_size}, action={action})"
+            )
+
     
-        # 1. Hebel setzen (SHORT)
-        try:
-            logs.append(f"Setze Hebel auf {leverage} für {symbol} (SHORT)...")
-            lev_resp = SHORT_set_leverage(api_key, secret_key, symbol, leverage, "SHORT")
-            logs.append(f"Leverage Response: {lev_resp}")
-        except Exception as e:
-            logs.append(f"Fehler beim Setzen des Hebels: {e}")
-    
+
         # 2. Offene Orders abrufen (um alte TP/SL/Limit zu handhaben)
         open_orders = {}
         try:
@@ -1710,13 +2079,71 @@ def webhook():
                 logs.append("Beenden=ja → Keine neue Base Order")
                 return jsonify({"status": "no_base_order_opened", "botname": botname, "reason": "beenden=ja", "logs": logs})
             else:
+
+                
                 status_fuer_alle[botname] = "OK"
                 alarm_counter[botname] = -1
                 if botname in saved_usdt_amounts:
                     del saved_usdt_amounts[botname]
                     logs.append("Ordergröße im Cache gelöscht (erste Order)")
                 if available_usdt is not None and pyramiding > 0:
-                    usdt_amount = max(((available_usdt - sicherheit) * bo_factor), 0)
+
+
+                    balance_response = get_futures_balance(api_key, secret_key)
+                    
+                    balance_data = balance_response.get("data", {}).get("balance", {})
+                    
+                    available_margin = float(balance_data.get("availableMargin", 0))
+                    position_margin = float(balance_data.get("usedMargin", 0))
+                    
+                    account_size = available_margin + position_margin
+
+                    # === BO-Faktor abhängig von MA bestimmen (NUR Baseorder) ===
+                    if bot_nr in ma_Wert:
+                        ma_aktiv = ma_Wert.get(bot_nr, 0)
+                        logs.append(f"MA aus RAM gelesen: {ma_aktiv} (bot_nr={bot_nr})")
+                    else:
+                        ma_aktiv = firebase_lese_ma_wert(bot_nr, firebase_secret)
+                        logs.append(f"MA aus Firebase gelesen: {ma_aktiv} (bot_nr={bot_nr})")
+
+                    position_side = str(position_side).strip().upper()
+                    bot_nr = int(bot_nr)
+                    
+                    if ma_aktiv == 1:
+                        bo_factor = bo_factor2
+                    
+                        # ✅ nur wenn zuvor ein SL passiert ist -> das ist wirklich der Recovery-Trade
+                        if recovery_pending.get(bot_nr) is True:
+                            recovery_trade[(bot_nr, position_side)] = "ja"
+                            recovery_pending.pop(bot_nr, None)
+                            logs.append(f"Recovery aktiviert für {(bot_nr, position_side)}")
+                            logs.append(f"bo_factor2 verwendet (MA=1): {bo_factor2}")
+                        else:
+                            # optional: verhindert falsche Recovery-Markierung
+                            logs.append("MA=1 aber kein recovery_pending -> Recovery NICHT markiert")
+                    
+                    else:
+                        bo_factor = bo_factor
+                        logs.append(f"bo_factor verwendet (MA=0): {bo_factor}")
+
+
+                    
+
+                    firebase_setze_ma_wert(bot_nr, 0, firebase_secret)
+                    ma_Wert[bot_nr] = 0
+
+                    logs.append(f"RAW balance response: {balance_response}")
+                    logs.append(f"Accountgrösse: {account_size}")
+                    logs.append(f"Verfügbare Marge: {available_margin}")
+                    logs.append(f"Position Marge: {position_margin}")
+                    
+                    
+                    #usdt_amount = max((account_size - sicherheit) * bo_factor, 0)   #usdt_amount = max(((available_usdt - sicherheit) * bo_factor), 0)
+                    margin_budget = max((account_size - sicherheit) * bo_factor, 0)   # das ist jetzt Margin
+                    usdt_amount   = margin_budget * leverageB                     # das ist Positionswert
+                    saved_usdt_amounts[botname] = usdt_amount
+                    
+
                     saved_usdt_amounts[botname] = usdt_amount
                     logs.append(f"Erste Ordergröße berechnet: {usdt_amount}")
         else:
@@ -1798,6 +2225,9 @@ def webhook():
             except Exception as e:
                 logs.append(f"Fehler beim Speichern Kaufpreis: {e}")
                 status_fuer_alle[botname] = "Fehler"
+
+
+
     
         # 8. Durchschnittspreis (Firebase oder BingX fallback)
         durchschnittspreis = None
