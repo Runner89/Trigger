@@ -1307,6 +1307,7 @@ def webhook():
         
         if action == "close" and botname:
             # Position schließen
+            pnl_logs = []
             # 1) Vorheriger Stand
             pre_end = int(time.time()*1000)
             pre_rows = fetch_income_window(api_key, secret_key, pre_end - 60*60*1000, pre_end, pnl_logs)  # 60min reicht
