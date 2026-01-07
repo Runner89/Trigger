@@ -106,18 +106,26 @@ def signed_get(api_key: str, secret_key: str, endpoint: str, params_dict: dict):
     r = requests.get(url, headers=headers, timeout=10)
     return r.json()
     
+def _norm_ms(t):
+    try:
+        t = int(t)
+    except Exception:
+        return 0
+    if t < 1_000_000_000_000:
+        return t * 1000
+    return t
+
 def fetch_netpnl_for_close(api_key, secret_key, botname, symbol, position_side, since_ms, pnl_debug=None):
     if pnl_debug is None:
         pnl_debug = []
 
     side = position_side.upper()
-    key = (botname, symbol, side)
 
-    # wir lesen ein Fenster nach dem Close, weil Income-Einträge leicht verzögert kommen können
     now_ms = int(time.time() * 1000)
+
     params = {
         "symbol": symbol,
-        "startTime": max(since_ms - 2000, now_ms - 7 * 24 * 60 * 60 * 1000),
+        "startTime": max(since_ms - 120_000, now_ms - 7 * 24 * 60 * 60 * 1000),
         "endTime": now_ms,
         "limit": 200,
         "timestamp": now_ms
@@ -131,6 +139,19 @@ def fetch_netpnl_for_close(api_key, secret_key, botname, symbol, position_side, 
 
     data = resp.get("data")
     rows = data.get("list", []) if isinstance(data, dict) and "list" in data else (data or [])
+
+    close_window_ms = 30_000
+    since = since_ms - close_window_ms
+
+    pnl_debug.append(f"[PnL] rows_count={len(rows)} since_ms={since_ms} since_with_tol={since}")
+    for i, r in enumerate(rows[:3]):
+        t_raw = r.get("time") or r.get("timestamp")
+        t_ms = _norm_ms(t_raw)
+        pnl_debug.append(
+            f"[PnL] sample{i} time_raw={t_raw} time_ms={t_ms} "
+            f"incomeType={r.get('incomeType')} side={r.get('positionSide') or r.get('posSide')} "
+            f"income={r.get('income')}"
+        )
 
     def is_realized(it: str) -> bool:
         it = (it or "").upper()
@@ -152,14 +173,8 @@ def fetch_netpnl_for_close(api_key, secret_key, botname, symbol, position_side, 
         if not is_realized(it):
             continue
 
-        t = row.get("time") or row.get("timestamp") or 0
-        try:
-            t = int(t)
-        except Exception:
-            continue
-
-        # nur neue Einträge seit Close
-        if t < since_ms:
+        t = _norm_ms(row.get("time") or row.get("timestamp") or 0)
+        if t < since:
             continue
 
         income_val = row.get("income") or row.get("realizedPnl") or row.get("profit") or row.get("pnl")
@@ -173,12 +188,11 @@ def fetch_netpnl_for_close(api_key, secret_key, botname, symbol, position_side, 
         newest_t = max(newest_t, t)
 
     if not found_any:
+        pnl_debug.append("[PnL] no matching realized pnl entries in window")
         return None, pnl_debug
 
-    pnl_debug.append(f"[PnL] summed_since={since_ms} newest_time={newest_t} netpnl_sum={total}")
+    pnl_debug.append(f"[PnL] summed_since={since} newest_time={newest_t} netpnl_sum={total}")
     return total, pnl_debug
-
-
 
 
 def generate_signature(secret_key: str, params: str) -> str:
