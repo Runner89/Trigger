@@ -1086,6 +1086,12 @@ def webhook():
         
         if action == "close" and botname:
             # Position schließen
+            
+            logs = []
+            
+            # ✅ 1) base_time IMMER setzen
+            base_time = base_order_times.get(botname)
+            
             print("DEBUG close reached")
             print("DEBUG action:", action)
             print("DEBUG botname:", botname)
