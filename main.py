@@ -112,7 +112,7 @@ def firebase_speichere_base_order_time(botname, timestamp, firebase_secret):
     return f"Base-Order-Zeit für {botname} gespeichert: {timestamp}, Status: {response.status_code}"
 
 def get_position_history(api_key, secret_key, symbol, start_ms, end_ms, limit=200):
-    endpoint = "/openApi/swap/v2/trade/positionHistory"  # in den Docs: "Query Position History"
+    endpoint = "/openApi/swap/v2/trade/positionHistory"
     params = {
         "symbol": symbol,
         "startTime": int(start_ms),
@@ -120,11 +120,12 @@ def get_position_history(api_key, secret_key, symbol, start_ms, end_ms, limit=20
         "limit": int(limit),
     }
     resp = send_signed_request("GET", endpoint, api_key, secret_key, params)
-    if resp.get("code") != 0:
-        return []
-    # je nach Response: resp["data"]["list"] oder resp["data"]
+
     data = resp.get("data", {})
-    return data.get("list", data if isinstance(data, list) else [])
+    rows = data.get("list", data if isinstance(data, list) else [])
+
+    # WICHTIG: Gib beides zurück: raw + rows
+    return {"raw": resp, "rows": rows}
 
 def last_5_by_side(position_history_rows, position_side):
     side = position_side.upper()
@@ -679,25 +680,19 @@ def webhook():
      
     
         now_ms = int(time.time() * 1000)
-        start_ms = now_ms - 1000 * 60 * 60 * 24 * 7  # letzte 7 Tage
-    
-        position_history = get_position_history(
-            api_key=api_key,
-            secret_key=secret_key,
-            symbol=symbol,
-            start_ms=start_ms,
-            end_ms=now_ms,
-            limit=200
-        )
+        start_ms = now_ms - 1000 * 60 * 60 * 24 * 90  # 90 Tage
         
+        ph = get_position_history(api_key, secret_key, symbol, start_ms, now_ms, limit=200)
         
         return jsonify({
             "error": False,
             "symbol": symbol,
-            "position_history": position_history,
+            "position_history_raw": ph["raw"],
+            "position_history_rows": ph["rows"],
             "logs": logs
         })
-                
+        
+        
         
 
 if __name__ == "__main__":
