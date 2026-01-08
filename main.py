@@ -695,6 +695,20 @@ def webhook():
         start_ms = now_ms - 7 * 24 * 60 * 60 * 1000
         
         ph = get_position_history(api_key, secret_key, symbol, start_ms, now_ms, limit=200)
+
+        # position_side kommt aus dem Webhook (z.B. "LONG" oder "SHORT")
+        pos_side = position_side
+        
+        history = ph.get("data", {}).get("positionHistory", []) if isinstance(ph, dict) else []
+        
+        # filtern nach positionSide
+        filtered = [r for r in history if str(r.get("positionSide", "")).upper() == pos_side]
+        
+        # nach updateTime absteigend sortieren (neueste zuerst)
+        filtered.sort(key=lambda r: int(r.get("updateTime", 0) or 0), reverse=True)
+        
+        # nur die letzte/neueste geschlossene Position
+        last_closed = filtered[0] if filtered else None
         
         rows = []
         
@@ -718,11 +732,11 @@ def webhook():
                 "updateTime_ch": update_time_ch,
             })
 
-
         return jsonify({
             "error": False,
             "symbol": symbol,
-            "position_history_rows": rows,
+            "position_side_requested": pos_side,
+            "last_closed_position": last_closed,
             "logs": logs
         })
                 
