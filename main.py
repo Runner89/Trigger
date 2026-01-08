@@ -112,13 +112,15 @@ def firebase_speichere_base_order_time(botname, timestamp, firebase_secret):
     return f"Base-Order-Zeit für {botname} gespeichert: {timestamp}, Status: {response.status_code}"
 
 def get_position_history(api_key, secret_key, symbol, start_ms, end_ms, limit=200):
-    endpoint = "/openApi/swap/v2/trade/positionHistory"
+    endpoint = "/openApi/swap/v1/trade/positionHistory"   # <-- WICHTIG: v1, nicht v2
+
     params = {
         "symbol": symbol,
         "startTime": int(start_ms),
         "endTime": int(end_ms),
         "limit": int(limit),
     }
+
     resp = send_signed_request("GET", endpoint, api_key, secret_key, params)
 
     data = resp.get("data", {})
@@ -680,18 +682,26 @@ def webhook():
      
     
         now_ms = int(time.time() * 1000)
-        start_ms = now_ms - 1000 * 60 * 60 * 24 * 90  # 90 Tage
+        start_ms = now_ms - 7 * 24 * 60 * 60 * 1000   # letzte 7 Tage
+        end_ms = now_ms
         
-        ph = get_position_history(api_key, secret_key, symbol, start_ms, now_ms, limit=200)
+        position_history_raw = get_position_history(api_key, secret_key, symbol, start_ms, end_ms, limit=200)
+        
+        # je nach deiner get_position_history-Implementierung:
+        rows = []
+        if isinstance(position_history_raw, dict):
+            rows = position_history_raw.get("data", position_history_raw.get("data", [])) or []
+            # manche Antworten: {"code":0,"msg":"","data":[...]}
+            # falls dein wrapper schon rows extrahiert, entsprechend anpassen
         
         return jsonify({
             "error": False,
             "symbol": symbol,
-            "position_history_raw": ph["raw"],
-            "position_history_rows": ph["rows"],
-            "logs": logs
+            "position_history_raw": position_history_raw,
+            "position_history_rows": rows,
+            "logs": logs,
         })
-        
+                
         
         
 
