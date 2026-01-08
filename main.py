@@ -1052,12 +1052,27 @@ def webhook():
             print("DEBUG ma int:", ma, type(ma))
             ergebnis = close_open_position(api_key, secret_key, symbol, position_side)
 
+            now_ms = int(time.time() * 1000)
+            start_ms = now_ms - 7 * 24 * 3600 * 1000  # letzte 7 Tage
+            
+            rows = get_position_history(
+                api_key=api_key,
+                secret_key=secret_key,
+                symbol="PUMP-USDT",
+                start_ms=start_ms,
+                end_ms=now_ms,
+                limit=200
+            )
 
+
+            
             last5_long  = last_5_by_side(rows, "LONG")
             last5_short = last_5_by_side(rows, "SHORT")
             
             sum_long_closed = sum(float(r.get("closedPnl", 0)) for r in last5_long)
             sum_short_closed = sum(float(r.get("closedPnl", 0)) for r in last5_short)
+
+            print(json.dumps(rows[0], indent=2))
             
             # Logs ausgeben
             print(ergebnis.get("logs", []))
@@ -1129,7 +1144,8 @@ def webhook():
                 "status": "position_closed",
                 "botname": botname,
                 "last5_long": last5_long,           
-                "sum_long_closed": sum_long_closed,                        
+                "sum_long_closed": sum_long_closed,            
+                "Test": json.dumps(rows[0], indent=2),          
                 "logs": ergebnis.get("logs", []),
                 "result": ergebnis.get("result", None)
             })  # <-- alle Klammern geschlossen
