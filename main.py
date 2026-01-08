@@ -118,8 +118,8 @@ def get_position_history(api_key, secret_key, symbol, start_ms, end_ms, limit=20
     endpoint = "/openApi/swap/v1/trade/positionHistory"
     params = {
         "symbol": symbol,
-        "startTime": int(start_ms),
-        "endTime": int(end_ms),
+        "startTs": int(start_ms),   # <-- wichtig
+        "endTs": int(end_ms),       # <-- wichtig
         "limit": int(limit),
     }
     return send_signed_request("GET", endpoint, api_key, secret_key, params)
@@ -689,27 +689,18 @@ def webhook():
      
     
         now_ms = int(time.time() * 1000)
-        start_ms = now_ms - 7 * 24 * 60 * 60 * 1000   # letzte 7 Tage
-        end_ms = now_ms
+        start_ms = now_ms - 7 * 24 * 60 * 60 * 1000
         
-        position_history_raw = get_position_history(api_key, secret_key, symbol, start_ms, end_ms, limit=200)
-        
-        # je nach deiner get_position_history-Implementierung:
-        rows = []
-        if isinstance(position_history_raw, dict):
-            rows = position_history_raw.get("data", position_history_raw.get("data", [])) or []
-            # manche Antworten: {"code":0,"msg":"","data":[...]}
-            # falls dein wrapper schon rows extrahiert, entsprechend anpassen
+        ph = get_position_history(api_key, secret_key, symbol, start_ms, now_ms, limit=200)
         
         return jsonify({
             "error": False,
             "symbol": symbol,
-            "position_history_raw": position_history_raw,
-            "position_history_rows": rows,
-            "logs": logs,
+            "position_history_raw": ph,
+            "logs": logs
         })
+                        
                 
-        
         
 
 if __name__ == "__main__":
