@@ -674,6 +674,7 @@ def webhook():
         bot_nr = data.get("RENDER", {}).get("bot_nr")
         ma = int(data.get("RENDER", {}).get("ma", 0))
         leverage2 = int(data.get("RENDER", {}).get("leverage2", 0))
+        symbol = int(data.get("RENDER", {}).get("symbol", 0))
 
         
      
