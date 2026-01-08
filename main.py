@@ -62,7 +62,8 @@
 
 
 
-from flask import Flask, request, jsonify, urlencode
+from flask import Flask, request, jsonify
+from urllib.parse import urlencode
 from datetime import datetime, timezone
 import time
 import hmac
