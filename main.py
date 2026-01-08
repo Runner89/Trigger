@@ -78,7 +78,6 @@ ORDER_ENDPOINT = "/openApi/swap/v2/trade/order"
 PRICE_ENDPOINT = "/openApi/swap/v2/quote/price"
 OPEN_ORDERS_ENDPOINT = "/openApi/swap/v2/trade/openOrders"
 FIREBASE_URL = os.environ.get("FIREBASE_URL", "")
-INCOME_ENDPOINT = "/openApi/swap/v2/user/income"
 
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
@@ -91,250 +90,6 @@ aktueller_Bot = {}
 ma_Wert = {} 
 recovery_trade = {} 
 recovery_pending = {}
-# getrennt je Bot + Symbol + Side
-last_closed_netpnl = {}   # key=(botname, symbol, "LONG"/"SHORT") -> float
-last_closed_income_ts = {}  # key=(botname, symbol, side) -> last seen income time (ms)
-
-last_closed_netpnl = {}   # key: (bot_nr:int, position_side:str) -> float
-last_closed_trade = {}
-
-def signed_get(api_key: str, secret_key: str, endpoint: str, params_dict: dict):
-    query_string = "&".join(f"{k}={params_dict[k]}" for k in sorted(params_dict))
-    signature = generate_signature(secret_key, query_string)
-    url = f"{BASE_URL}{endpoint}?{query_string}&signature={signature}"
-    headers = {"X-BX-APIKEY": api_key}
-    r = requests.get(url, headers=headers, timeout=10)
-    return r.json()
-    
-def _norm_ms(t):
-    try:
-        t = int(t)
-    except Exception:
-        return 0
-    return t * 1000 if t < 1_000_000_000_000 else t
-
-def fetch_income_window(api_key, secret_key, start_ms, end_ms, pnl_debug):
-    params = {
-        "startTime": start_ms,
-        "endTime": end_ms,
-        "limit": 1000,
-        "timestamp": int(time.time()*1000)
-    }
-    resp = signed_get(api_key, secret_key, INCOME_ENDPOINT, params)
-    pnl_debug.append(f"[PnL] income_window start={start_ms} end={end_ms} code={resp.get('code')} msg={resp.get('msg')}")
-    if resp.get("code") != 0:
-        return []
-
-    data = resp.get("data")
-    if isinstance(data, dict) and "list" in data:
-        return data.get("list") or []
-    if isinstance(data, list):
-        return data
-    return []
-
-def pick_closest_realized_time(rows, symbol, close_ts_ms, pnl_debug, max_before_ms=30*60*1000, max_after_ms=2*60*1000):
-    sym = symbol.upper().replace("-", "")
-    candidates = []
-
-    for r in rows:
-        if (r.get("symbol") or "").upper().replace("-", "") != sym:
-            continue
-        it = (r.get("incomeType") or "").upper()
-        if not ("REAL" in it and "PNL" in it):
-            continue
-
-        t = _norm_ms(r.get("time") or r.get("timestamp") or 0)
-        if not t:
-            continue
-
-        dt = t - close_ts_ms
-        # nur in sinnvollem Fenster zulassen
-        if dt < -max_before_ms or dt > max_after_ms:
-            continue
-
-        candidates.append((abs(dt), dt, t))
-
-    if not candidates:
-        pnl_debug.append("[PnL] closest_pick: no candidate in window")
-        return None
-
-    candidates.sort(key=lambda x: (x[0], x[1]))  # kleinste Abweichung, bei Gleichstand eher "nach" close
-    best = candidates[0]
-    pnl_debug.append(f"[PnL] closest_pick t0={best[2]} dt_ms={best[1]}")
-    return best[2]
-
-
-def pick_latest_realized_time(rows, symbol, pnl_debug):
-    tmax = None
-    for r in rows:
-        if (r.get("symbol") or "").upper().replace("-", "") != symbol.upper().replace("-", ""):
-            continue
-        it = (r.get("incomeType") or "").upper()
-        if not ("REAL" in it and "PNL" in it):
-            continue
-        t = _norm_ms(r.get("time") or r.get("timestamp") or 0)
-        if not t:
-            continue
-        if tmax is None or t > tmax:
-            tmax = t
-    pnl_debug.append(f"[PnL] latest_realized_time_in_window={tmax}")
-    return tmax
-
-def sum_close_group(rows, symbol, t0, pnl_debug, window_ms=20_000):
-    lo, hi = t0 - window_ms, t0 + window_ms
-    total = 0.0
-    parts = []
-    for r in rows:
-        if (r.get("symbol") or "").upper().replace("-", "") != symbol.upper().replace("-", ""):
-            continue
-        it = (r.get("incomeType") or "").upper()
-        if not (("REAL" in it and "PNL" in it) or it == "TRADING_FEE" or ("FUNDING" in it and "FEE" in it)):
-            continue
-        t = _norm_ms(r.get("time") or r.get("timestamp") or 0)
-        if not (lo <= t <= hi):
-            continue
-        try:
-            val = float(r.get("income"))
-        except Exception:
-            continue
-        total += val
-        parts.append((t, it, val))
-
-    parts.sort(key=lambda x: x[0], reverse=True)
-    pnl_debug.append(f"[PnL] group_sum t0={t0} window=±{window_ms}ms entries={len(parts)} total={total}")
-    pnl_debug.append(f"[PnL] group_parts_top10={parts[:10]}")
-    return total if parts else None
-
-def fetch_last_close_bucket_net(symbol, rows, pnl_debug, window_ms=10_000):
-    # 1) neuesten REALIZED_PNL finden
-    realized = []
-    for r in rows:
-        if (r.get("symbol") or "").upper() != symbol.upper():
-            continue
-        it = (r.get("incomeType") or r.get("type") or "").upper()
-        if "REAL" in it and "PNL" in it:
-            realized.append(r)
-
-    if not realized:
-        pnl_debug.append("[PnL] fallback: no REALIZED_PNL rows at all")
-        return None
-
-    realized.sort(key=lambda r: _norm_ms(r.get("time") or r.get("timestamp") or 0), reverse=True)
-    t0 = _norm_ms(realized[0].get("time") or realized[0].get("timestamp") or 0)
-
-    # 2) alles Relevante im Zeitfenster summieren
-    def relevant(it: str) -> bool:
-        it = (it or "").upper()
-        return ("REAL" in it and "PNL" in it) or ("TRADING_FEE" in it) or ("FUNDING" in it and "FEE" in it)
-
-    total = 0.0
-    used = 0
-    parts = []
-
-    lo, hi = t0 - window_ms, t0 + window_ms
-
-    for r in rows:
-        if (r.get("symbol") or "").upper() != symbol.upper():
-            continue
-
-        it = (r.get("incomeType") or r.get("type") or "")
-        if not relevant(it):
-            continue
-
-        t = _norm_ms(r.get("time") or r.get("timestamp") or 0)
-        if not (lo <= t <= hi):
-            continue
-
-        val = r.get("income") or r.get("realizedPnl") or r.get("profit") or r.get("pnl")
-        try:
-            val = float(val)
-        except Exception:
-            continue
-
-        total += val
-        used += 1
-        parts.append((t, (it or "").upper(), val))
-
-    parts.sort(key=lambda x: x[0], reverse=True)
-    pnl_debug.append(f"[PnL] fallback window t0={t0} window_ms=±{window_ms} entries={used} net_sum={total}")
-    pnl_debug.append(f"[PnL] fallback parts (top5)={parts[:5]}")
-    return total
-
-
-def fetch_netpnl_for_close(api_key, secret_key, botname, symbol, position_side, since_ms, pnl_debug=None):
-    if pnl_debug is None:
-        pnl_debug = []
-
-    side = position_side.upper()
-    now_ms = int(time.time() * 1000)
-
-    # ✅ Robust: keine serverseitige symbol/start/end Filter, nur limit
-    params = {
-        "limit": 500,
-        "timestamp": now_ms
-    }
-
-    resp = signed_get(api_key, secret_key, INCOME_ENDPOINT, params)
-    pnl_debug.append(f"[PnL] endpoint={INCOME_ENDPOINT} code={resp.get('code')} msg={resp.get('msg')}")
-
-    if resp.get("code") != 0:
-        pnl_debug.append(f"[PnL] full_resp={str(resp)[:800]}")
-        return None, pnl_debug
-
-    data = resp.get("data")
-    if isinstance(data, dict) and "list" in data:
-        rows = data.get("list") or []
-    elif isinstance(data, list):
-        rows = data
-    else:
-        rows = []
-        pnl_debug.append(f"[PnL] data_type={type(data)} data_preview={str(data)[:200]}")
-
-    pnl_debug.append(f"[PnL] rows_count={len(rows)}")
-
-    def is_realized(it: str) -> bool:
-        it = (it or "").upper()
-        return ("REAL" in it and "PNL" in it) or ("REALIZED" in it)
-
-    # ✅ Toleranz: Serverzeit + Buchungsdelay
-    since = since_ms - 60_000  # 60s vorher
-
-    total = 0.0
-    found = False
-    newest_t = 0
-
-    for row in rows:
-        if (row.get("symbol") or "").upper() != symbol.upper():
-            continue
-
-        row_side = (row.get("positionSide") or row.get("posSide") or "").upper()
-        if row_side and row_side != side:
-            continue
-
-        it = row.get("incomeType") or row.get("type") or ""
-        if not is_realized(it):
-            continue
-
-        t = _norm_ms(row.get("time") or row.get("timestamp") or 0)
-        if t < since:
-            continue
-
-        income_val = row.get("income") or row.get("realizedPnl") or row.get("profit") or row.get("pnl")
-        try:
-            income_val = float(income_val)
-        except Exception:
-            continue
-
-        total += income_val
-        found = True
-        newest_t = max(newest_t, t)
-
-    if not found:
-        pnl_debug.append(f"[PnL] no matches for symbol={symbol} side={side} since={since} -> fallback to last close window")
-        fb = fetch_last_close_bucket_net(symbol, rows, pnl_debug, window_ms=10_000)
-        return fb, pnl_debug
-    
-
 
 
 def generate_signature(secret_key: str, params: str) -> str:
@@ -355,78 +110,28 @@ def firebase_speichere_base_order_time(botname, timestamp, firebase_secret):
     response = requests.put(url, json=data)
     return f"Base-Order-Zeit für {botname} gespeichert: {timestamp}, Status: {response.status_code}"
 
-def _to_float(x, default=0.0):
-    try:
-        if x is None:
-            return default
-        return float(x)
-    except Exception:
-        return default
-
-def get_last_closed_position_netpnl(api_key, secret_key, symbol, position_side, logs=None):
-    """
-    Holt NetPnL der zuletzt geschlossenen Position für (symbol, position_side).
-    Robust: retry, und gibt Debug-Infos in logs zurück.
-    """
-    side = str(position_side).strip().upper()
-
-    # ✅ v2 (wichtig!)
-    endpoint = "/openApi/swap/v2/trade/positionHistory"
-
-    now_ms = int(time.time() * 1000)
-    start_ms = now_ms - 30 * 24 * 60 * 60 * 1000  # 30 Tage
-
+def get_position_history(api_key, secret_key, symbol, start_ms, end_ms, limit=200):
+    endpoint = "/openApi/swap/v2/trade/positionHistory"  # in den Docs: "Query Position History"
     params = {
         "symbol": symbol,
-        "startTime": start_ms,
-        "endTime": now_ms,
-        "limit": 100
+        "startTime": int(start_ms),
+        "endTime": int(end_ms),
+        "limit": int(limit),
     }
+    resp = send_signed_request("GET", endpoint, api_key, secret_key, params)
+    if resp.get("code") != 0:
+        return []
+    # je nach Response: resp["data"]["list"] oder resp["data"]
+    data = resp.get("data", {})
+    return data.get("list", data if isinstance(data, list) else [])
 
-    # Retry: History ist manchmal erst kurz nach Close verfügbar
-    for attempt in range(1, 6):
-        resp = send_signed_request("GET", endpoint, api_key, secret_key, dict(params))
+def last_5_by_side(position_history_rows, position_side):
+    side = position_side.upper()
+    rows = [r for r in position_history_rows if str(r.get("positionSide","")).upper() == side]
+    # sortiert nach Schließzeit (oder updateTime)
+    rows.sort(key=lambda r: int(r.get("closeTime", r.get("updateTime", 0))), reverse=True)
+    return rows[:5]
 
-        if logs is not None:
-            logs.append(f"[PnL] attempt={attempt} endpoint={endpoint} resp_code={resp.get('code')} msg={resp.get('msg')}")
-            # Vorsicht: kann groß sein – aber zum Debuggen hilfreich:
-            logs.append(f"[PnL] resp_data_preview={str(resp.get('data'))[:500]}")
-
-        if not resp or resp.get("code") != 0:
-            time.sleep(0.25)
-            continue
-
-        rows = resp.get("data", []) or []
-
-        # Falls API ohne positionSide liefert, NICHT hart filtern
-        # sonst filtern wir sauber:
-        if rows and isinstance(rows[0], dict) and ("positionSide" in rows[0]):
-            rows = [r for r in rows if str(r.get("positionSide", "")).upper() == side]
-
-        if not rows:
-            time.sleep(0.25)
-            continue
-
-        # sortiere nach closeTime/updateTime
-        def _ts(r):
-            return int(r.get("closeTime") or r.get("updateTime") or r.get("time") or 0)
-
-        rows.sort(key=_ts, reverse=True)
-        last = rows[0]
-
-        # mögliche Feldnamen:
-        net = last.get("netProfit") or last.get("netPnl") or last.get("netPNL")
-        if net is not None:
-            return _to_float(net, None), last
-
-        realized = last.get("realizedProfit") or last.get("realisedProfit") or last.get("pnl") or last.get("profit")
-        fee = last.get("fee") or last.get("commission") or last.get("tradingFee")
-        funding = last.get("fundingFee") or last.get("funding")
-
-        net_calc = _to_float(realized, 0.0) - _to_float(fee, 0.0) - _to_float(funding, 0.0)
-        return net_calc, last
-
-    return None, None
 
 def get_current_price(symbol: str):
     url = f"{BASE_URL}{PRICE_ENDPOINT}?symbol={symbol}"
@@ -1339,111 +1044,20 @@ def webhook():
         
         if action == "close" and botname:
             # Position schließen
-            pnl_logs = []
-            # -------------------------------------------------
-            # 1) Letzten bekannten REALIZED_PNL-Zeitpunkt VOR dem Close merken
-            #    (damit wir erkennen, ob durch diesen Close etwas Neues entsteht)
-            # -------------------------------------------------
-            pre_end = int(time.time() * 1000)
-            pre_rows = fetch_income_window(
-                api_key,
-                secret_key,
-                pre_end - 60 * 60 * 1000,  # 60 Minuten zurück
-                pre_end,
-                pnl_logs
-            )
-        
-            prev_t0 = pick_latest_realized_time(pre_rows, symbol, pnl_logs) or 0
-            pnl_logs.append(f"[PnL] prev_t0_before_close={prev_t0}")
-        
-            # -------------------------------------------------
-            # 2) Close-Timestamp (WICHTIG: VOR dem Close!)
-            # -------------------------------------------------
-            close_ts = int(time.time() * 1000)
-        
-            # -------------------------------------------------
-            # 3) Position schließen (oder Versuch – evtl. schon zu)
-            # -------------------------------------------------
-            ergebnis = close_open_position(api_key, secret_key, symbol, position_side)
-        
-            # -------------------------------------------------
-            # 4) Auf NEUE REALIZED_PNL-Gruppe warten
-            #    → nur wenn wirklich durch diesen Close etwas geschlossen wurde
-            # -------------------------------------------------
-            last_net = None
-            detected_t0 = None
-            
             print("DEBUG close reached")
             print("DEBUG action:", action)
             print("DEBUG botname:", botname)
             print("DEBUG bot_nr:", bot_nr, type(bot_nr))
             print("DEBUG ma raw:", data.get("RENDER", {}).get("ma"), type(data.get("RENDER", {}).get("ma")))
             print("DEBUG ma int:", ma, type(ma))
+            ergebnis = close_open_position(api_key, secret_key, symbol, position_side)
+
+
+            last5_long  = last_5_by_side(rows, "LONG")
+            last5_short = last_5_by_side(rows, "SHORT")
             
-            for attempt in range(20):  # 20 × 0.5s = max. 10 Sekunden warten
-        end_ms = int(time.time() * 1000)
-
-        rows = fetch_income_window(
-            api_key,
-            secret_key,
-            close_ts - 10 * 60 * 1000,  # 10 Minuten vor Close
-            end_ms,
-            pnl_logs
-        )
-
-        t0 = pick_latest_realized_time(rows, symbol, pnl_logs)
-        pnl_logs.append(
-            f"[PnL] attempt={attempt+1} t0_now={t0} prev_t0={prev_t0}"
-        )
-
-        # ✅ Nur wenn wirklich eine NEUE Schließung passiert ist
-        if t0 and t0 > prev_t0:
-            detected_t0 = t0
-            last_net = sum_close_group(
-                rows,
-                symbol,
-                detected_t0,
-                pnl_logs,
-                window_ms=20_000  # Fees können bis ~20s versetzt sein
-            )
-            break
-
-        time.sleep(0.5)
-    
-        # -------------------------------------------------
-        # 5) Fallback:
-        #    Wenn keine neue REALIZED_PNL entstanden ist,
-        #    dann war die Position beim Close schon zu →
-        #    also: "letzte geschlossene Position"
-        # -------------------------------------------------
-        if last_net is None:
-            pnl_logs.append("[PnL] no new realized group -> fallback to last closed position")
-    
-            end_ms = int(time.time() * 1000)
-            rows = fetch_income_window(
-                api_key,
-                secret_key,
-                end_ms - 60 * 60 * 1000,  # 60 Minuten
-                end_ms,
-                pnl_logs
-            )
-    
-            fallback_t0 = pick_latest_realized_time(rows, symbol, pnl_logs)
-            pnl_logs.append(f"[PnL] fallback_t0={fallback_t0}")
-    
-            if fallback_t0:
-                last_net = sum_close_group(
-                    rows,
-                    symbol,
-                    fallback_t0,
-                    pnl_logs,
-                    window_ms=20_000
-                )
-    
-        # -------------------------------------------------
-        # 6) Antwort
-        # -------------------------------------------------
-
+            sum_long_closed = sum(float(r.get("closedPnl", 0)) for r in last5_long)
+            sum_short_closed = sum(float(r.get("closedPnl", 0)) for r in last5_short)
             
             # Logs ausgeben
             print(ergebnis.get("logs", []))
@@ -1514,7 +1128,8 @@ def webhook():
             return jsonify({
                 "status": "position_closed",
                 "botname": botname,
-                "last_closed_netpnl": last_net,
+                "last5_long": last5_long,           
+                "sum_long_closed": sum_long_closed,                        
                 "logs": ergebnis.get("logs", []),
                 "result": ergebnis.get("result", None)
             })  # <-- alle Klammern geschlossen
