@@ -95,6 +95,7 @@ aktueller_Bot = {}
 ma_Wert = {} 
 recovery_trade = {} 
 recovery_pending = {}
+naechste_bo = {}
 
 def get_position_history(api_key, secret_key, symbol, start_ms, end_ms, limit=200):
     endpoint = "/openApi/swap/v1/trade/positionHistory"
@@ -600,18 +601,19 @@ def firebase_lese_base_order_time(botname, firebase_secret):
 
 def firebase_set_naechste_bo(bot_nr, wert, firebase_secret):
     """
-    Speichert naechsteBO/{bot_nr}/wert = wert
+    Überschreibt naechsteBO/{bot_nr}/wert in Firebase
+    (ohne globale Variable, Firebase ist Single Source of Truth)
     """
-    url = f"{FIREBASE_URL}/naechsteBO/{bot_nr}.json?auth={firebase_secret}"
-    data = {
-        "wert": wert
-    }
-    response = requests.put(url, json=data)
+    url = f"{FIREBASE_URL}/naechsteBO/{bot_nr}/wert.json?auth={firebase_secret}"
 
-    if response.status_code == 200:
-        return f"naechsteBO für Bot {bot_nr} gespeichert: {wert}"
-    else:
-        raise Exception(f"Firebase Fehler: {response.text}")
+    wert = int(wert)
+
+    response = requests.put(url, json=wert, timeout=5)
+
+    if response.status_code != 200:
+        raise Exception(
+            f"Firebase Fehler beim Setzen naechsteBO/{bot_nr}/wert: {response.text}"
+        )
 
 def firebase_lese_naechste_bo(bot_nr, firebase_secret):
     """
@@ -1055,6 +1057,7 @@ def webhook():
     global ma_Wert
     global recovery_trade
     global recovery_pending
+    global naechste_bo
 
     data = request.json
     logs = []
@@ -1119,6 +1122,8 @@ def webhook():
             print("DEBUG ma raw:", data.get("RENDER", {}).get("ma"), type(data.get("RENDER", {}).get("ma")))
             print("DEBUG ma int:", ma, type(ma))
             ergebnis = close_open_position(api_key, secret_key, symbol, position_side)
+
+            naechste_bo_global[bot_nr] = 0
             
             # Logs ausgeben
             print(ergebnis.get("logs", []))
