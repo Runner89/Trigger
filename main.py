@@ -709,6 +709,20 @@ def webhook():
         
         # nur die letzte/neueste geschlossene Position
         last_closed = filtered[0] if filtered else None
+
+        if last_closed:
+            update_time_ms = int(last_closed.get("updateTime", 0))
+        
+            update_time_ch = (
+                datetime.fromtimestamp(update_time_ms / 1000, tz=ZoneInfo("Europe/Zurich"))
+                .isoformat()
+                if update_time_ms else None
+            )
+        
+            last_closed_with_ch_time = {
+                **last_closed,                 # alle Original-Felder
+                "updateTime_ch": update_time_ch
+            }
         
         rows = []
         
@@ -736,7 +750,7 @@ def webhook():
             "error": False,
             "symbol": symbol,
             "position_side_requested": pos_side,
-            "last_closed_position": last_closed,
+            "last_closed_position": last_closed_with_ch_time,
             "logs": logs
         })
                 
