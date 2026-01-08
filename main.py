@@ -45,6 +45,8 @@
 #    "pyramiding": 8, grösser als 0, wird nicht berücksichtig für Berechnung, es wird für BO gerechnet: (verfügbares Guthaben  - Sicherheit) * bo_factor
 #    "sicherheit": 96, Sicherheit muss nicht mal Hebel gerechnet werden, wird im Code gemacht
 #    "usdt_factor": 1.4,
+#    "1BO": 0.2, wie viel beträgt zu Beginn die Margin der aller ersten Base Order (Gewinn wird immer fortlaufend anteilsmässig dazuaddiert)
+#    "RTBO": 45, wie viel beträgt zu Beginn die Margin beim Recovery Trade (Gewinn wird immer fortlaufend anteilsmässig dazuaddiert)
 #    "bo_factor": 0.001, wie viel Prozent beträgt die BO im Verhältnis zum verfügbaren Guthaben unter Berücksichtung der Gewichtung aller SO
 #    "bo_factor2": 0.001, wie viel Prozent beträgt die BO im Verhältnis zum verfügbaren Guthaben unter Berücksichtung der Gewichtung aller SO nach einem SL
 #    "base_time2": "", darf nur beim Testen Inhalt enthalten, 2025-08-22T11:22:37.986015+00:00, simulierter Zeitpunkt der BO
@@ -1051,7 +1053,9 @@ def webhook():
         position_side = data.get("RENDER", {}).get("position_side") or data.get("RENDER", {}).get("positionSide") or "LONG"    #data.get("position_side") or data.get("positionSide") or "LONG"
         firebase_secret = data.get("RENDER", {}).get("FIREBASE_SECRET")    #data.get("FIREBASE_SECRET")
         price_from_webhook = data.get("RENDER", {}).get("price")    #data.get("price")
-        usdt_factor = float(data.get("RENDER", {}).get("usdt_factor", 1))    #float(data.get("usdt_factor", 1))
+        1BO = float(data.get("RENDER", {}).get("1BO", 0))    
+        RTBO = float(data.get("RENDER", {}).get("RTBO", 0))  
+        usdt_factor = float(data.get("RENDER", {}).get("usdt_factor", 1)) 
         bo_factor = float(data.get("RENDER", {}).get("bo_factor", 0.0001))    #float(data.get("bo_factor", 0.0001))
         bo_factor2 = float(data.get("RENDER", {}).get("bo_factor2", 0.0001))    #float(data.get("bo_factor", 0.0001))
         action = data.get("vyn", {}).get("action", "").lower()    #KOMMT VON VYN     data.get("action", "").lower()
@@ -1803,6 +1807,8 @@ def webhook():
         usdt_factor = float(data.get("RENDER", {}).get("usdt_factor", 1))
         bo_factor = float(data.get("RENDER", {}).get("bo_factor", 0.0001))
         bo_factor2 = float(data.get("RENDER", {}).get("bo_factor2", 0.0001))
+        1BO = float(data.get("RENDER", {}).get("1BO", 0))    
+        RTBO = float(data.get("RENDER", {}).get("RTBO", 0)) 
         action = data.get("vyn", {}).get("action", "").lower()
         base_time2 = data.get("RENDER", {}).get("base_time2")
         after_h = data.get("RENDER", {}).get("after_h", 48)
