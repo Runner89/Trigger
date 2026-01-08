@@ -71,6 +71,8 @@ import hashlib
 import requests
 import os
 import json
+from datetime import datetime
+from zoneinfo import ZoneInfo   # Python ≥ 3.9 (bei dir: 3.13 ✔)
 
 
 
@@ -686,20 +688,43 @@ def webhook():
         leverage2 = int(data.get("RENDER", {}).get("leverage2", 0))
         symbol = data.get("RENDER", {}).get("symbol", "")
         
-     
+
+
     
         now_ms = int(time.time() * 1000)
         start_ms = now_ms - 7 * 24 * 60 * 60 * 1000
         
         ph = get_position_history(api_key, secret_key, symbol, start_ms, now_ms, limit=200)
         
+        rows = []
+        
+        for r in ph.get("data", {}).get("positionHistory", []):
+            update_time_ms = int(r.get("updateTime", 0))
+        
+            update_time_ch = (
+                datetime.fromtimestamp(update_time_ms / 1000, tz=ZoneInfo("Europe/Zurich"))
+                .isoformat()
+                if update_time_ms else None
+            )
+        
+            rows.append({
+                "symbol": r.get("symbol"),
+                "positionSide": r.get("positionSide"),
+                "positionAmt": r.get("positionAmt"),
+                "netProfit": r.get("netProfit"),
+        
+                # ⬇️ HIER neu
+                "updateTime_utc_ms": update_time_ms,
+                "updateTime_ch": update_time_ch,
+            })
+
+
         return jsonify({
             "error": False,
             "symbol": symbol,
-            "position_history_raw": ph,
+            "position_history_rows": rows,
             "logs": logs
         })
-                        
                 
         
 
