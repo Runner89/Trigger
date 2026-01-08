@@ -597,6 +597,42 @@ def firebase_lese_base_order_time(botname, firebase_secret):
     except Exception as e:
         print(f"Fehler beim Lesen des Base-Order-Zeitpunkts aus Firebase für {botname}: {e}")
         return None
+
+def firebase_set_naechste_bo(bot_nr, wert, firebase_secret):
+    """
+    Speichert naechsteBO/{bot_nr}/wert = wert
+    """
+    url = f"{FIREBASE_URL}/naechsteBO/{bot_nr}.json?auth={firebase_secret}"
+    data = {
+        "wert": wert
+    }
+    response = requests.put(url, json=data)
+
+    if response.status_code == 200:
+        return f"naechsteBO für Bot {bot_nr} gespeichert: {wert}"
+    else:
+        raise Exception(f"Firebase Fehler: {response.text}")
+
+def firebase_lese_naechste_bo(bot_nr, firebase_secret):
+    """
+    Liest naechsteBO/{bot_nr}/wert aus Firebase
+    """
+    url = f"{FIREBASE_URL}/naechsteBO/{bot_nr}/wert.json?auth={firebase_secret}"
+    response = requests.get(url, timeout=5)
+
+    if response.status_code != 200:
+        return None
+
+    try:
+        wert = response.json()
+        if wert is None:
+            return 0   # Default, falls noch nichts existiert
+        return int(wert)
+    except Exception as e:
+        print(f"Fehler beim Lesen von naechsteBO/{bot_nr}: {e}")
+        return 0
+
+
     
 def set_leverage(api_key, secret_key, symbol, leverage, position_side="LONG"):
     endpoint = "/openApi/swap/v2/trade/leverage"
