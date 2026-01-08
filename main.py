@@ -71,6 +71,8 @@ import requests
 import os
 import json
 
+
+
 app = Flask(__name__)
 
 BASE_URL = "https://open-api.bingx.com"
@@ -112,22 +114,15 @@ def firebase_speichere_base_order_time(botname, timestamp, firebase_secret):
     return f"Base-Order-Zeit für {botname} gespeichert: {timestamp}, Status: {response.status_code}"
 
 def get_position_history(api_key, secret_key, symbol, start_ms, end_ms, limit=200):
-    endpoint = "/openApi/swap/v1/trade/positionHistory"   # <-- WICHTIG: v1, nicht v2
-
+    endpoint = "/openApi/swap/v1/trade/positionHistory"
     params = {
         "symbol": symbol,
         "startTime": int(start_ms),
         "endTime": int(end_ms),
         "limit": int(limit),
     }
+    return send_signed_request("GET", endpoint, api_key, secret_key, params)
 
-    resp = send_signed_request("GET", endpoint, api_key, secret_key, params)
-
-    data = resp.get("data", {})
-    rows = data.get("list", data if isinstance(data, list) else [])
-
-    # WICHTIG: Gib beides zurück: raw + rows
-    return {"raw": resp, "rows": rows}
 
 def last_5_by_side(position_history_rows, position_side):
     side = position_side.upper()
@@ -253,26 +248,37 @@ def send_signed_request(http_method, endpoint, api_key, secret_key, params=None)
     if params is None:
         params = {}
 
-    timestamp = int(time.time() * 1000)
-    params['timestamp'] = timestamp
+    # wichtig: Keys strippen (verhindert hidden spaces/newlines aus env/json)
+    api_key = (api_key or "").strip()
+    secret_key = (secret_key or "").strip()
 
-    query_string = "&".join(f"{k}={params[k]}" for k in sorted(params))
-    signature = hmac.new(secret_key.encode(), query_string.encode(), hashlib.sha256).hexdigest()
-    params['signature'] = signature
+    # timestamp in ms
+    params = {k: params[k] for k in params}
+    params["timestamp"] = int(time.time() * 1000)
+
+    # 1) Querystring in stabiler Reihenfolge bauen (sorted!)
+    items = sorted((k, str(v)) for k, v in params.items())
+    query_string = urlencode(items)
+
+    # 2) Signatur über GENAU diesen String
+    signature = hmac.new(secret_key.encode("utf-8"), query_string.encode("utf-8"), hashlib.sha256).hexdigest()
+
+    # 3) Signatur anhängen (und wieder stabil senden)
+    items.append(("signature", signature))
 
     url = f"{BASE_URL}{endpoint}"
     headers = {"X-BX-APIKEY": api_key}
 
     if http_method == "GET":
-        response = requests.get(url, headers=headers, params=params)
+        return requests.get(url, headers=headers, params=items, timeout=10).json()
     elif http_method == "POST":
-        response = requests.post(url, headers=headers, json=params)
+        # Bei BingX ist POST je nach Endpoint mal query, mal json.
+        # Für swap endpoints i.d.R. query ok:
+        return requests.post(url, headers=headers, params=items, timeout=10).json()
     elif http_method == "DELETE":
-        response = requests.delete(url, headers=headers, params=params)
+        return requests.delete(url, headers=headers, params=items, timeout=10).json()
     else:
         raise ValueError("Unsupported HTTP method")
-
-    return response.json()
 
 def get_current_position(api_key, secret_key, symbol, position_side, logs=None):
     endpoint = "/openApi/swap/v2/user/positions"
