@@ -650,19 +650,6 @@ def webhook():
         logs = []
     
 
-     
-    
-        now_ms = int(time.time() * 1000)
-        start_ms = now_ms - 1000 * 60 * 60 * 24 * 7  # letzte 7 Tage
-    
-        position_history = get_position_history(
-            api_key=api_key,
-            secret_key=secret_key,
-            symbol=symbol,
-            start_ms=start_ms,
-            end_ms=now_ms,
-            limit=200
-        )
     
         # Eingabewerte
         pyramiding = float(data.get("RENDER", {}).get("pyramiding", 1))  #float(data.get("pyramiding", 1))
@@ -687,6 +674,21 @@ def webhook():
         bot_nr = data.get("RENDER", {}).get("bot_nr")
         ma = int(data.get("RENDER", {}).get("ma", 0))
         leverage2 = int(data.get("RENDER", {}).get("leverage2", 0))
+
+        
+     
+    
+        now_ms = int(time.time() * 1000)
+        start_ms = now_ms - 1000 * 60 * 60 * 24 * 7  # letzte 7 Tage
+    
+        position_history = get_position_history(
+            api_key=api_key,
+            secret_key=secret_key,
+            symbol=symbol,
+            start_ms=start_ms,
+            end_ms=now_ms,
+            limit=200
+        )
         
         
         return jsonify({
