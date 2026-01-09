@@ -1245,6 +1245,8 @@ def webhook():
         
             data = response.get_json() or {}
 
+            
+
             #wenn im Webhook pnl nicht 0 ist, dann soll der pnl vom Webhook verwendet werden zum testen
             if pnl != 0:
                 last_net_profit = pnl
@@ -1255,20 +1257,20 @@ def webhook():
                 print("Keine letzte Position gefunden.")
                 last_net_profit_Anteil = 0.0
             else:
-                if last_net_profit < 0:
-                    last_net_profit_Anteil = 0.0
-                else:
-                    last_net_profit = float(last_net_profit)
-                    last_net_profit_Anteil = (bo_factor * (last_net_profit / 3.0)) / 100
+                last_net_profit = float(last_net_profit)
 
+                last_net_profit_Anteil = (bo_factor * (last_net_profit / 3.0)) / 100
                 
-                      
+
+            # ✅ Update berechnen (Variante A) + Untergrenze absichern
+            new_bo = naechste_bo[bot_nr] + last_net_profit_Anteil
+            if new_bo < 2.15:
+                new_bo = 0.15
+            
+            naechste_bo[bot_nr] = new_bo
 
             print("Letzter NetProfit:", last_net_profit)
             print("Anteil:", last_net_profit_Anteil)
-            
-            # 4️⃣ Addieren
-            naechste_bo[bot_nr] += last_net_profit_Anteil
             
             # 5️⃣ Firebase überschreiben (kein Read mehr)
             firebase_set_naechste_bo(
@@ -2117,13 +2119,27 @@ def webhook():
                 print("Keine letzte Position gefunden.")
                 last_net_profit_Anteil = 0.0
             else:
-                if last_net_profit < 0:
-                    last_net_profit_Anteil = 0.0
-                else:
-                    last_net_profit = float(last_net_profit)
-                    last_net_profit_Anteil = (bo_factor * (last_net_profit / 3.0)) / 100
-                    
+                last_net_profit = float(last_net_profit)
+
+                last_net_profit_Anteil = (bo_factor * (last_net_profit / 3.0)) / 100
+
+            # ✅ Update berechnen (Variante A) + Untergrenze absichern
+            new_bo = naechste_bo[bot_nr] + last_net_profit_Anteil
+            if new_bo < 2.15:
+                new_bo = 0.15
             
+            naechste_bo[bot_nr] = new_bo
+
+            print("Letzter NetProfit:", last_net_profit)
+            print("Anteil:", last_net_profit_Anteil)
+            
+            # 5️⃣ Firebase überschreiben (kein Read mehr)
+            firebase_set_naechste_bo(
+                bot_nr,
+                float(naechste_bo[bot_nr]),
+                firebase_secret
+            )                   
+                    
             
             # Logs ausgeben
             print(ergebnis.get("logs", []))
