@@ -737,6 +737,53 @@ def set_leverage(api_key, secret_key, symbol, leverage, position_side="LONG"):
 
     return send_signed_request("POST", endpoint, api_key, secret_key, params)
 
+import requests
+
+def naechste_bo_missing_ram_then_firebase(bot_nr, firebase_secret, naechste_bo_dict):
+    """
+    Prüft zuerst RAM (naechste_bo_dict), dann Firebase.
+    
+    Return:
+      True  -> es existiert KEIN Eintrag (weder in RAM noch in Firebase)
+      False -> es existiert ein Eintrag (in RAM oder Firebase)
+
+    Side effect (praktisch):
+      Wenn Firebase einen Wert hat und RAM keinen -> RAM wird gesetzt.
+    """
+    bot_nr = int(bot_nr)
+
+    # 1) RAM: Existiert der Key?
+    if bot_nr in naechste_bo_dict:
+        return False  # Eintrag existiert in RAM (auch wenn Wert 0 ist)
+
+    # 2) Firebase: Existiert der Key?
+    url = f"{FIREBASE_URL}/naechsteBO/{bot_nr}.json?auth={firebase_secret}"
+    try:
+        r = requests.get(url, timeout=5)
+        if r.status_code != 200:
+            # bei Fehler defensiv: so behandeln als existiert es nicht
+            return True
+
+        data = r.json()
+
+        # Firebase: None => Key existiert nicht
+        if data is None:
+            return True
+
+        # Key existiert -> in RAM spiegeln
+        try:
+            naechste_bo_dict[bot_nr] = float(data)
+        except (TypeError, ValueError):
+            # existiert, aber nicht als float parsebar -> trotzdem "existiert"
+            naechste_bo_dict[bot_nr] = data
+
+        return False
+
+    except Exception as e:
+        print(f"Fehler bei Firebase-Check naechsteBO/{bot_nr}: {e}")
+        return True
+
+
 
 ### SHORT Funktionen
 # === Hilfsfunktionen ===
@@ -1203,7 +1250,7 @@ def webhook():
       
 
    
-        
+        bot_nr = int(bot_nr)
         if action == "close" and botname:
             # Position schließen
             print("DEBUG close reached")
@@ -1229,7 +1276,7 @@ def webhook():
             
                 naechste_bo[bot_nr] = current_bo
                                 
-            if naechste_bo[bot_nr] != 0:
+            if naechste_bo_missing_ram_then_firebase(bot_nr, firebase_secret, naechste_bo) == false:
             
                 response = get_last_netprofit_for_side(
                     api_key=api_key,
@@ -1577,11 +1624,13 @@ def webhook():
                                 f"⚠️ BO-Grösse konnte nicht gelesen werden. "
                                 f"BO wurde nicht erhöht. bot_nr={bot_nr}, side={position_side}"
                             )
+                            firebase_set_naechste_bo(bot_nr, 0, firebase_secret)
+                            naechste_bo.get(bot_nr) = 0
 
-                            wert_fb = 0
-                            wert = wert_fb 
+                            #wert_fb = 0
+                            #wert = wert_fb 
 
-                            naechste_bo[bot_nr] = 0
+                            #naechste_bo[bot_nr] = 0
                             
                             #return jsonify({
                             #    "error": True,
@@ -2061,7 +2110,7 @@ def webhook():
         # ------------------------------
        
 
-    
+        bot_nr = int(bot_nr)
         # action == "close" -> sofort close der SHORT position
         if action == "close":
 
