@@ -1630,7 +1630,7 @@ def webhook():
                                 firebase_secret
                             )      
                             
-                            naechste_bo.get(bot_nr) = 0
+                            naechste_bo[bot_nr] = 0
 
                             #wert_fb = 0
                             #wert = wert_fb 
