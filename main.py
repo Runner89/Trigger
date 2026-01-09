@@ -103,6 +103,7 @@ ma_Wert = {}
 recovery_trade = {} 
 recovery_pending = {}
 naechste_bo = {}
+cycle_started = {} 
 
 def get_position_history(api_key, secret_key, symbol, start_ms, end_ms, limit=200):
     endpoint = "/openApi/swap/v1/trade/positionHistory"
@@ -113,6 +114,43 @@ def get_position_history(api_key, secret_key, symbol, start_ms, end_ms, limit=20
         "limit": int(limit),
     }
     return send_signed_request("GET", endpoint, api_key, secret_key, params)
+
+def cycle_started_get(bot_nr, firebase_secret):
+    bot_nr = int(bot_nr)
+
+    # 1) RAM hat Priorität
+    if bot_nr in cycle_started:
+        return bool(cycle_started[bot_nr])
+
+    # 2) Fallback: Firebase
+    fb = firebase_cycle_started_read(bot_nr, firebase_secret)
+
+    # Key fehlt in Firebase -> nicht gestartet
+    if fb is None:
+        cycle_started[bot_nr] = False
+        return False
+
+    # Wenn Firebase True/False liefert:
+    started = bool(fb)
+    cycle_started[bot_nr] = started
+    return started
+
+def cycle_started_set(bot_nr, firebase_secret, value: bool, mirror_to_firebase: bool = True):
+    bot_nr = int(bot_nr)
+    cycle_started[bot_nr] = bool(value)
+
+    # Optional spiegeln (damit Restart-sicher)
+    if mirror_to_firebase:
+        firebase_cycle_started_write(bot_nr, firebase_secret, bool(value))
+
+def cycle_started_clear(bot_nr, firebase_secret, mirror_to_firebase: bool = True):
+    bot_nr = int(bot_nr)
+    cycle_started.pop(bot_nr, None)
+
+    if mirror_to_firebase:
+        firebase_cycle_started_delete(bot_nr, firebase_secret)
+
+
 
 def get_last_netprofit_for_side(api_key, secret_key, symbol, position_side, logs=None):
     logs = logs or []
@@ -1277,8 +1315,9 @@ def webhook():
                         
                 
                                 
-            if not naechste_bo_missing_ram_then_firebase(bot_nr, firebase_secret, naechste_bo):
-            
+            #if not naechste_bo_missing_ram_then_firebase(bot_nr, firebase_secret, naechste_bo):
+            if cycle_started_get(bot_nr, firebase_secret):
+                
                 response = get_last_netprofit_for_side(
                     api_key=api_key,
                     secret_key=secret_key,
@@ -1321,8 +1360,9 @@ def webhook():
                     bot_nr,
                     float(naechste_bo[bot_nr]),
                     firebase_secret
-                )                     
-    
+                )  
+                
+            cycle_started_clear(bot_nr, firebase_secret, mirror_to_firebase=True)
             
             # Logs ausgeben
             print(ergebnis.get("logs", []))
@@ -1649,7 +1689,9 @@ def webhook():
                         else:
                             # Firebase-Wert ist gültig → in RAM übernehmen
                             naechste_bo[bot_nr] = wert_fb
-                            wert = wert_fb                              
+                            wert = wert_fb 
+                            
+                    
 
                     # === BO-Faktor abhängig von MA bestimmen (NUR Baseorder) ===
                     if bot_nr in ma_Wert:
@@ -1733,7 +1775,11 @@ def webhook():
                 order_response = place_market_order(api_key, secret_key, symbol, float(usdt_amount), position_side)
                 alarm_counter[botname] += 1
                 logs.append(firebase_speichere_ordergroesse(botname, usdt_amount, firebase_secret))
-                time.sleep(2)
+                time.sleep(1.5)
+                
+                cycle_started_set(bot_nr, firebase_secret, True, mirror_to_firebase=True)
+              
+                
                 logs.append(f"Market-Order Antwort: {order_response}")
     
                 # API-Antwort prüfen
@@ -2146,7 +2192,7 @@ def webhook():
             
                 
                                 
-            if not naechste_bo_missing_ram_then_firebase(bot_nr, firebase_secret, naechste_bo):
+            if cycle_started_get(bot_nr, firebase_secret):
             
                 response = get_last_netprofit_for_side(
                     api_key=api_key,
@@ -2190,8 +2236,9 @@ def webhook():
                     bot_nr,
                     float(naechste_bo[bot_nr]),
                     firebase_secret
-                )                     
-                    
+                )      
+                
+            cycle_started_clear(bot_nr, firebase_secret, mirror_to_firebase=True)        
             
             # Logs ausgeben
             print(ergebnis.get("logs", []))
@@ -2550,6 +2597,8 @@ def webhook():
             logs.append(SHORT_firebase_speichere_ordergroesse(botname, usdt_amount, firebase_secret))
             time.sleep(1.5)
             logs.append(f"Market-Order Antwort: {order_response}")
+            cycle_started_set(bot_nr, firebase_secret, True, mirror_to_firebase=True)
+
             if not order_response or order_response.get("code") != 0:
                 status_fuer_alle[botname] = "Fehler"
                 logs.append("Marketorder konnte nicht gesetzt werden.")
