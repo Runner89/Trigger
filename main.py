@@ -1624,7 +1624,12 @@ def webhook():
                                 f"⚠️ BO-Grösse konnte nicht gelesen werden. "
                                 f"BO wurde nicht erhöht. bot_nr={bot_nr}, side={position_side}"
                             )
-                            firebase_set_naechste_bo(bot_nr, 0, firebase_secret)
+                            firebase_set_naechste_bo(
+                                bot_nr,
+                                float(0.0),
+                                firebase_secret
+                            )      
+                            
                             naechste_bo.get(bot_nr) = 0
 
                             #wert_fb = 0
