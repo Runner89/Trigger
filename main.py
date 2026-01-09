@@ -2,7 +2,7 @@
 #nicht vyn
 
 ##### WICHTIG: In Firebase darf vor dem Start unter naechste_bo/bot_nr nichts stehen, als die bot_nr löschen
-##### Bei der allerersten Baseorder und beim allerersten Close-Befehl kommt jeweils eine Telegramm Meldung, welche aber ignoriert werden kann. 
+##### Bei der allerersten Baseorder kommt jeweils eine Telegramm Meldung, welche aber ignoriert werden kann. 
 
 
 #Bei Verlust eines Trades wird kein Anteil abgezogen, sondern bleibt gleich
@@ -1674,6 +1674,8 @@ def webhook():
                             logs.append("MA=1 aber kein recovery_pending -> Recovery NICHT markiert")
                     
                     else:
+                        if wert is None:
+                            wert = 0.0
                         margin_budget = BO1 + wert
                         
                         logs.append(f"bo_factor verwendet (MA=0): {bo_factor}")
@@ -2137,13 +2139,12 @@ def webhook():
                 fb_value = firebase_lese_naechste_bo(bot_nr, firebase_secret)
                 if fb_value is not None and float(fb_value) != 0:
                     current_bo = float(fb_value)
-                else:
-                    current_bo = 0.0
+ 
             
-                naechste_bo[bot_nr] = current_bo
+                
                                 
-            if naechste_bo[bot_nr] != 0:
-
+            if not naechste_bo_missing_ram_then_firebase(bot_nr, firebase_secret, naechste_bo):
+            
                 response = get_last_netprofit_for_side(
                     api_key=api_key,
                     secret_key=secret_key,
@@ -2154,10 +2155,11 @@ def webhook():
             
                 data = response.get_json() or {}
     
+                
+    
                 #wenn im Webhook pnl nicht 0 ist, dann soll der pnl vom Webhook verwendet werden zum testen
                 if pnl != 0:
                     last_net_profit = pnl
-                    
                 else:
                     last_net_profit = data.get("last_net_profit")
                 
@@ -2168,6 +2170,7 @@ def webhook():
                     last_net_profit = float(last_net_profit)
     
                     last_net_profit_Anteil = (bo_factor * (last_net_profit / 3.0)) / 100
+                    
     
                 # ✅ Update berechnen (Variante A) + Untergrenze absichern
                 new_bo = naechste_bo[bot_nr] + last_net_profit_Anteil
@@ -2184,7 +2187,7 @@ def webhook():
                     bot_nr,
                     float(naechste_bo[bot_nr]),
                     firebase_secret
-                )                   
+                )                     
                     
             
             # Logs ausgeben
@@ -2418,8 +2421,7 @@ def webhook():
                     
                     account_size = available_margin + position_margin
 
-
-                    # nächste BO Grösse festlegen
+                  # nächste BO Grösse festlegen
                     # RAM → Firebase → Telegram (Fallback)
                     
                     wert = naechste_bo.get(bot_nr)  # None, wenn nicht vorhanden
@@ -2433,12 +2435,21 @@ def webhook():
                         if wert_fb is None or wert_fb == 0:
                             sende_telegram_nachricht(
                                 botname,
-                                f"⚠️ BO-Grösse konnte nicht gelesen werden oder ist 0. "
+                                f"⚠️ BO-Grösse konnte nicht gelesen werden. "
                                 f"BO wurde nicht erhöht. bot_nr={bot_nr}, side={position_side}"
                             )
+                            firebase_set_naechste_bo(
+                                bot_nr,
+                                float(0.0),
+                                firebase_secret
+                            )      
+                            
+                            naechste_bo[bot_nr] = 0
 
-                            wert_fb = 0
-                            wert = wert_fb
+                            #wert_fb = 0
+                            #wert = wert_fb 
+
+                            #naechste_bo[bot_nr] = 0
                             
                             #return jsonify({
                             #    "error": True,
@@ -2448,11 +2459,10 @@ def webhook():
                             #    "position_side": position_side,
                             #    "logs": logs
                             #}), 400
-
                         else:
                             # Firebase-Wert ist gültig → in RAM übernehmen
                             naechste_bo[bot_nr] = wert_fb
-                            wert = wert_fb                                                 
+                            wert = wert_fb                                             
 
 
                     # === BO-Faktor abhängig von MA bestimmen (NUR Baseorder) ===
@@ -2480,6 +2490,8 @@ def webhook():
                             logs.append("MA=1 aber kein recovery_pending -> Recovery NICHT markiert")
                     
                     else:
+                        if wert is None:
+                            wert = 0.0
                         margin_budget = BO1 + wert
                         logs.append(f"bo_factor verwendet (MA=0): {bo_factor}")
 
