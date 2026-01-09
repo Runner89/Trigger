@@ -1271,6 +1271,8 @@ def webhook():
                 fb_value = firebase_lese_naechste_bo(bot_nr, firebase_secret)
                 if fb_value is not None and float(fb_value) != 0:
                     current_bo = float(fb_value)
+                    naechste_bo[bot_nr] = current_bo
+                    
  
             
                 
@@ -2139,6 +2141,7 @@ def webhook():
                 fb_value = firebase_lese_naechste_bo(bot_nr, firebase_secret)
                 if fb_value is not None and float(fb_value) != 0:
                     current_bo = float(fb_value)
+                    naechste_bo[bot_nr] = current_bo
  
             
                 
