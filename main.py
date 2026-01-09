@@ -1234,7 +1234,7 @@ def webhook():
                     current_bo = 0
                     # lokal setzen
                     naechste_bo[bot_nr] = current_bo
-                    sende_telegram_nachricht(botname, f"⚠️ Startwert BO konnte weder aus Variable noch in Firebase gelesen werden, bot_nr={bot_nr}, side={position_side}") 
+                    #sende_telegram_nachricht(botname, f"⚠️ Startwert BO konnte weder aus Variable noch in Firebase gelesen werden, bot_nr={bot_nr}, side={position_side}") 
                     
             if naechste_bo[bot_nr] != 0:
             
@@ -2099,9 +2099,9 @@ def webhook():
                     current_bo = 0
                     # lokal setzen
                     naechste_bo[bot_nr] = current_bo
-                    sende_telegram_nachricht(botname, f"⚠️ Startwert BO konnte weder aus Variable noch in Firebase gelesen werden, bot_nr={bot_nr}, side={position_side}")        
+                    #sende_telegram_nachricht(botname, f"⚠️ Startwert BO konnte weder aus Variable noch in Firebase gelesen werden, bot_nr={bot_nr}, side={position_side}")        
                     
-            if float(naechste_bo.get(bot_nr)) != 0:
+            if naechste_bo[bot_nr] != 0:
 
                 response = get_last_netprofit_for_side(
                     api_key=api_key,
