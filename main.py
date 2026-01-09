@@ -1,7 +1,7 @@
 #31.12.2025
 #nicht vyn
 
-##### WICHTIG: In Firebase muss vor dem Start unter naechste_bo/bot_nr der Wert von 1BO eingetragen werden. 
+##### WICHTIG: In Firebase muss vor dem Start unter naechste_bo/bot_nr der Wert auf 0.00000001 gesetzt werden
 
 #Botname wird ignoriert.
 #Market Order mit Hebel wird gesetzt
@@ -1208,7 +1208,7 @@ def webhook():
             ergebnis = close_open_position(api_key, secret_key, symbol, position_side)
 
            
-            time.sleep(1.5)
+            time.sleep(1.2)
 
             # 1️⃣ Lokalen Wert holen
             current_bo = naechste_bo.get(bot_nr)
@@ -1221,13 +1221,14 @@ def webhook():
                     current_bo = float(fb_value)
                 else:
                     # 3️⃣ Fallback: Startwert
-                    current_bo = 1BO
+                    current_bo = 0.00000001
+                    sende_telegram_nachricht(botname, f"⚠️ Startwert BO konnte weder aus Variable noch in Firebase gelesen werden, bot_nr={bot_nr}, side={position_side}")
             
                 # lokal setzen
                 naechste_bo[bot_nr] = current_bo
                 
-            # naechste_bo[bot_nr] muss grösser sein als 1BO, naechste_bo[bot_nr] wird zu Beginn manuell auf 1BO gesetzt
-            if naechste_bo[bot_nr] > 1BO
+            # naechste_bo[bot_nr] muss grösser als 0.00000001 sein, zu Beginn wird es auf 0.00000001 gesetzt
+            if naechste_bo[bot_nr] > 0.00000001
             
 
                 response = get_last_netprofit_for_side(
@@ -1587,7 +1588,7 @@ def webhook():
                     bot_nr = int(bot_nr)
                     
                     if ma_aktiv == 1:
-                        bo_factor = bo_factor2
+                        margin_budget = 1BO + wert
                     
                         # ✅ nur wenn zuvor ein SL passiert ist -> das ist wirklich der Recovery-Trade
                         if recovery_pending.get(bot_nr) is True:
@@ -1600,7 +1601,8 @@ def webhook():
                             logs.append("MA=1 aber kein recovery_pending -> Recovery NICHT markiert")
                     
                     else:
-                        bo_factor = bo_factor
+                        margin_budget = RTBO + wert
+                        
                         logs.append(f"bo_factor verwendet (MA=0): {bo_factor}")
 
                     firebase_setze_ma_wert(bot_nr, 0, firebase_secret)
@@ -1616,7 +1618,7 @@ def webhook():
                         # Erste Order bleibt unverändert
                         #usdt_amount = max(((available_usdt - sicherheit) * bo_factor), 0)    #max(((available_usdt - sicherheit) / pyramiding), 0)
                         #usdt_amount = max((account_size - sicherheit) * bo_factor, 0)
-                        margin_budget = max((account_size - sicherheit) * bo_factor, 0)   # das ist jetzt Margin
+                        #margin_budget = max((account_size - sicherheit) * bo_factor, 0)   # das ist jetzt Margin
                         usdt_amount   = margin_budget * leverageB                         # das ist Positionswert
                         saved_usdt_amounts[botname] = usdt_amount
 
@@ -2018,6 +2020,7 @@ def webhook():
         bo_factor2 = float(data.get("RENDER", {}).get("bo_factor2", 0.0001))
         1BO = float(data.get("RENDER", {}).get("1BO", 0))    
         RTBO = float(data.get("RENDER", {}).get("RTBO", 0)) 
+        pnl = float(data.get("RENDER", {}).get("pnl", 0)) 
         action = data.get("vyn", {}).get("action", "").lower()
         base_time2 = data.get("RENDER", {}).get("base_time2")
         after_h = data.get("RENDER", {}).get("after_h", 48)
@@ -2050,6 +2053,68 @@ def webhook():
             print("DEBUG ma raw:", data.get("RENDER", {}).get("ma"), type(data.get("RENDER", {}).get("ma")))
             print("DEBUG ma int:", ma, type(ma))
             ergebnis = SHORT_close_open_position(api_key, secret_key, symbol, position_side)
+
+
+            time.sleep(1.2)
+
+            # 1️⃣ Lokalen Wert holen
+            current_bo = naechste_bo.get(bot_nr)
+            
+            # 2️⃣ Falls lokal nicht brauchbar → Firebase lesen
+            if not current_bo or current_bo == 0:
+                fb_value = firebase_lese_naechste_bo(bot_nr, firebase_secret)
+            
+                if fb_value and float(fb_value) != 0:
+                    current_bo = float(fb_value)
+                else:
+                    # 3️⃣ Fallback: Startwert
+                    current_bo = 0.00000001
+                    sende_telegram_nachricht(botname, f"⚠️ Startwert BO konnte weder aus Variable noch in Firebase gelesen werden, bot_nr={bot_nr}, side={position_side}")
+            
+                # lokal setzen
+                naechste_bo[bot_nr] = current_bo
+                
+            # naechste_bo[bot_nr] muss grösser als 0.00000001 sein, zu Beginn wird es auf 0.00000001 gesetzt
+            if naechste_bo[bot_nr] > 0.00000001
+            
+
+                response = get_last_netprofit_for_side(
+                    api_key=API_KEY,
+                    secret_key=SECRET_KEY,
+                    symbol=symbol,
+                    position_side=position_side,
+                    logs=logs
+                )
+                
+                data = response.get_json() or {}
+
+                #wenn im Webhook pnl nicht 0 ist, dann soll der pnl vom Webhook verwendet werden zum testen
+                if pnl != 0:
+                    last_net_profit = data.get("last_net_profit")
+                else:
+                    last_net_profit = pnl
+                
+                if last_net_profit is None:
+                    print("Keine letzte Position gefunden.")
+                    last_net_profit_Anteil = 0.0
+                else:
+                    last_net_profit = float(last_net_profit)
+                    last_net_profit_Anteil = (bo_factor * (last_net_profit / 3.0)) / 100.0
+    
+    
+                print("Letzter NetProfit:", last_net_profit)
+                print("Anteil:", last_net_profit_Anteil)
+                
+                # 4️⃣ Addieren
+                naechste_bo[bot_nr] += last_net_profit_Anteil
+                
+                # 5️⃣ Firebase überschreiben (kein Read mehr)
+                firebase_set_naechste_bo(
+                    bot_nr,
+                    float(naechste_bo[bot_nr]),
+                    firebase_secret
+                )                     
+            
             
             # Logs ausgeben
             print(ergebnis.get("logs", []))
@@ -2282,6 +2347,31 @@ def webhook():
                     
                     account_size = available_margin + position_margin
 
+
+                    # nächste BO Grösse festlegen
+                    # RAM → Firebase → Telegram (Fallback)
+                    
+                    wert = naechste_bo.get(bot_nr)  # None, wenn nicht vorhanden
+                    
+                    # ❗ Abbruch, wenn RAM-Wert ungültig
+                    if wert is None or wert == 0:
+                    
+                        wert_fb = firebase_lese_naechste_bo(bot_nr, firebase_secret)
+                    
+                        # ❗ Abbruch, wenn Firebase-Wert ebenfalls ungültig
+                        if wert_fb is None or wert_fb == 0:
+                            sende_telegram_nachricht(
+                                botname,
+                                f"⚠️ BO-Grösse konnte nicht gelesen werden oder ist 0. "
+                                f"Es wurde kein Trade eröffnet. bot_nr={bot_nr}, side={position_side}"
+                            )
+                            return  # KEINE Order!
+                        else:
+                            # Firebase-Wert ist gültig → in RAM übernehmen
+                            naechste_bo[bot_nr] = wert_fb
+                            wert = wert_fb                                                 
+
+
                     # === BO-Faktor abhängig von MA bestimmen (NUR Baseorder) ===
                     if bot_nr in ma_Wert:
                         ma_aktiv = ma_Wert.get(bot_nr, 0)
@@ -2294,7 +2384,7 @@ def webhook():
                     bot_nr = int(bot_nr)
                     
                     if ma_aktiv == 1:
-                        bo_factor = bo_factor2
+                        margin_budget = 1BO + wert
                     
                         # ✅ nur wenn zuvor ein SL passiert ist -> das ist wirklich der Recovery-Trade
                         if recovery_pending.get(bot_nr) is True:
@@ -2307,7 +2397,7 @@ def webhook():
                             logs.append("MA=1 aber kein recovery_pending -> Recovery NICHT markiert")
                     
                     else:
-                        bo_factor = bo_factor
+                        margin_budget = RTBO + wert
                         logs.append(f"bo_factor verwendet (MA=0): {bo_factor}")
 
 
@@ -2323,7 +2413,7 @@ def webhook():
                     
                     
                     #usdt_amount = max((account_size - sicherheit) * bo_factor, 0)   #usdt_amount = max(((available_usdt - sicherheit) * bo_factor), 0)
-                    margin_budget = max((account_size - sicherheit) * bo_factor, 0)   # das ist jetzt Margin
+                    #margin_budget = max((account_size - sicherheit) * bo_factor, 0)   # das ist jetzt Margin
                     usdt_amount   = margin_budget * leverageB                     # das ist Positionswert
                     saved_usdt_amounts[botname] = usdt_amount
                     
