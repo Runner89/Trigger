@@ -689,9 +689,9 @@ def firebase_set_naechste_bo(bot_nr, wert, firebase_secret):
     Überschreibt naechsteBO/{bot_nr}/wert in Firebase
     (ohne globale Variable, Firebase ist Single Source of Truth)
     """
-    url = f"{FIREBASE_URL}/naechsteBO/{bot_nr}/wert.json?auth={firebase_secret}"
+    url = f"{FIREBASE_URL}/naechsteBO/{bot_nr}.json?auth={firebase_secret}"
 
-    wert = int(wert)
+    wert = float(wert)
 
     response = requests.put(url, json=wert, timeout=5)
 
@@ -701,19 +701,21 @@ def firebase_set_naechste_bo(bot_nr, wert, firebase_secret):
         )
 
 def firebase_lese_naechste_bo(bot_nr, firebase_secret):
-    url = f"{FIREBASE_URL}/naechsteBO/{bot_nr}/wert.json?auth={firebase_secret}"
+    url = f"{FIREBASE_URL}/naechsteBO/{bot_nr}.json?auth={firebase_secret}"
 
     try:
         response = requests.get(url, timeout=5)
         if response.status_code != 200:
             return None
 
-        wert = response.json()
+        raw = response.json()
 
-        if wert is None:
-            return 0  # gültig: noch kein Eintrag
+        # Kein Eintrag vorhanden
+        if raw is None:
+            return None
 
-        return float(wert)
+        # Wichtig: float, nicht int
+        return float(raw)
 
     except Exception as e:
         print(f"Fehler beim Lesen naechsteBO/{bot_nr}: {e}")
