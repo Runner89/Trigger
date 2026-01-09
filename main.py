@@ -107,6 +107,86 @@ def get_position_history(api_key, secret_key, symbol, start_ms, end_ms, limit=20
     }
     return send_signed_request("GET", endpoint, api_key, secret_key, params)
 
+def get_last_netprofit_for_side(api_key, secret_key, symbol, position_side, logs=None):
+    logs = logs or []
+
+    # Zeitraum: letzte 7 Tage
+    now_ms = int(time.time() * 1000)
+    start_ms = now_ms - 7 * 24 * 60 * 60 * 1000
+
+    # API Call (deine Funktion)
+    ph = get_position_history(api_key, secret_key, symbol, start_ms, now_ms, limit=5)
+
+    # position_side kommt aus dem Webhook (z.B. "LONG" oder "SHORT")
+    pos_side = str(position_side or "").upper().strip()
+
+    # History sicher auslesen
+    history = ph.get("data", {}).get("positionHistory", []) if isinstance(ph, dict) else []
+
+    # Filtern nach positionSide (LONG/SHORT)
+    filtered = [
+        r for r in history
+        if str(r.get("positionSide", "")).upper() == pos_side
+    ]
+
+    # Nach updateTime absteigend sortieren (neueste zuerst)
+    filtered.sort(key=lambda r: int(r.get("updateTime", 0) or 0), reverse=True)
+
+    # Nur die letzte/neueste Position für die gewünschte Side
+    last_closed = filtered[0] if filtered else None
+
+    # Ergebnis-Variablen
+    last_net_profit = None
+    last_closed_with_ch_time = None
+
+    if last_closed:
+        # netProfit in Variable speichern
+        try:
+            last_net_profit = float(last_closed.get("netProfit", 0))
+        except (TypeError, ValueError):
+            last_net_profit = 0.0
+
+        # updateTime -> CH Time
+        update_time_ms = int(last_closed.get("updateTime", 0) or 0)
+        update_time_ch = (
+            datetime.fromtimestamp(update_time_ms / 1000, tz=ZoneInfo("Europe/Zurich")).isoformat()
+            if update_time_ms else None
+        )
+
+        # Optional: last closed Position inkl. CH Zeit
+        last_closed_with_ch_time = {
+            **last_closed,
+            "updateTime_utc_ms": update_time_ms,
+            "updateTime_ch": update_time_ch,
+        }
+
+    # Optional: rows (falls du es weiterhin loggen/prüfen willst)
+    rows = []
+    for r in history:
+        update_time_ms = int(r.get("updateTime", 0) or 0)
+        update_time_ch = (
+            datetime.fromtimestamp(update_time_ms / 1000, tz=ZoneInfo("Europe/Zurich")).isoformat()
+            if update_time_ms else None
+        )
+        rows.append({
+            "symbol": r.get("symbol"),
+            "positionSide": r.get("positionSide"),
+            "positionAmt": r.get("positionAmt"),
+            "netProfit": r.get("netProfit"),
+            "updateTime_utc_ms": update_time_ms,
+            "updateTime_ch": update_time_ch,
+        })
+
+    return jsonify({
+        "error": False,
+        "symbol": symbol,
+        "position_side_requested": pos_side,
+        "last_net_profit": last_net_profit,                 # ✅ HIER ist deine Variable
+        "last_closed_position": last_closed_with_ch_time,   # optional
+        "logs": logs,
+        # "rows": rows,  # optional, falls du alles anzeigen willst
+    })
+
 
 def generate_signature(secret_key: str, params: str) -> str:
     return hmac.new(secret_key.encode('utf-8'), params.encode('utf-8'), hashlib.sha256).hexdigest()
@@ -1124,11 +1204,66 @@ def webhook():
             print("DEBUG ma int:", ma, type(ma))
             ergebnis = close_open_position(api_key, secret_key, symbol, position_side)
 
+            # 1️⃣ Lokalen Wert holen
+            current_bo = naechste_bo.get(bot_nr)
+            
+            # 2️⃣ Falls lokal nicht brauchbar → Firebase lesen
+            if not current_bo or current_bo == 0:
+                fb_value = firebase_lese_naechste_bo(bot_nr, firebase_secret)
+            
+                if fb_value and float(fb_value) != 0:
+                    current_bo = float(fb_value)
+                else:
+                    # 3️⃣ Fallback: Startwert
+                    current_bo = 1BO
+            
+                # lokal setzen
+                naechste_bo[bot_nr] = current_bo
+
+
+            response = get_last_netprofit_for_side(
+                api_key=API_KEY,
+                secret_key=SECRET_KEY,
+                symbol=symbol,
+                position_side=position_side,
+                logs=logs
+            )
+            
+            data = response.get_json() or {}
+            last_net_profit = data.get("last_net_profit")
+            
+            if last_net_profit is None:
+                print("Keine letzte Position gefunden.")
+                last_net_profit_Anteil = 0.0
+            else:
+                last_net_profit = float(last_net_profit)
+                last_net_profit_Anteil = (10.0705745867036 * (last_net_profit / 3.0)) / 100.0
+
+
+            print("Letzter NetProfit:", last_net_profit)
+            print("Anteil:", last_net_profit_Anteil)
+            
+            # 4️⃣ Addieren
+            naechste_bo[bot_nr] += last_net_profit_Anteil
+            
+            # 5️⃣ Firebase überschreiben (kein Read mehr)
+            firebase_set_naechste_bo(
+                bot_nr,
+                float(naechste_bo[bot_nr]),
+                firebase_secret
+            )
+
+
+
+
+
+
+
             
             # nächste BO Grösse festlegen
             # RAM → Firebase → Telegram (Fallback)
             
-            wert = naechste_bo_global.get(bot_nr)  # None, wenn nicht vorhanden
+            wert = naechste_bo.get(bot_nr)  # None, wenn nicht vorhanden
             
             # ❗ Abbruch, wenn RAM-Wert ungültig
             if wert is None or wert == 0:
@@ -1145,12 +1280,11 @@ def webhook():
                     return  # KEINE Order!
                 else:
                     # Firebase-Wert ist gültig → in RAM übernehmen
-                    naechste_bo_global[bot_nr] = wert_fb
+                    naechste_bo[bot_nr] = wert_fb
                     wert = wert_fb                                   
                 
             
-            naechste_bo_global[bot_nr] = 0
-            firebase_set_naechste_bo(bot_nr, 0, firebase_secret)
+    
             
             # Logs ausgeben
             print(ergebnis.get("logs", []))
