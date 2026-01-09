@@ -1203,6 +1203,8 @@ def webhook():
             print("DEBUG ma raw:", data.get("RENDER", {}).get("ma"), type(data.get("RENDER", {}).get("ma")))
             print("DEBUG ma int:", ma, type(ma))
             ergebnis = close_open_position(api_key, secret_key, symbol, position_side)
+            
+            time.sleep(1.5)
 
             # 1️⃣ Lokalen Wert holen
             current_bo = naechste_bo.get(bot_nr)
