@@ -2115,7 +2115,7 @@ def webhook():
                 print("Keine letzte Position gefunden.")
                 last_net_profit_Anteil = 0.0
             else:
-                if last_net_profit_Anteil < 0:
+                if last_net_profit < 0:
                     last_net_profit_Anteil = 0.0
                 else:
                     last_net_profit = float(last_net_profit)
