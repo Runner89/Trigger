@@ -1276,7 +1276,7 @@ def webhook():
             
                 naechste_bo[bot_nr] = current_bo
                                 
-            if naechste_bo_missing_ram_then_firebase(bot_nr, firebase_secret, naechste_bo) == False:
+            if not naechste_bo_missing_ram_then_firebase(bot_nr, firebase_secret, naechste_bo):
             
                 response = get_last_netprofit_for_side(
                     api_key=api_key,
