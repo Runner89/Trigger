@@ -1251,8 +1251,11 @@ def webhook():
                     print("Keine letzte Position gefunden.")
                     last_net_profit_Anteil = 0.0
                 else:
-                    last_net_profit = float(last_net_profit)
-                    last_net_profit_Anteil = (bo_factor * (last_net_profit / 3.0)) / 100.0
+                    if last_net_profit_Anteil < 0:
+                        last_net_profit_Anteil = 0.0
+                    else:
+                        last_net_profit = float(last_net_profit)
+                        last_net_profit_Anteil = (bo_factor * (last_net_profit / 3.0)) / 100.0
     
     
                 print("Letzter NetProfit:", last_net_profit)
@@ -2098,9 +2101,11 @@ def webhook():
                     print("Keine letzte Position gefunden.")
                     last_net_profit_Anteil = 0.0
                 else:
-                    last_net_profit = float(last_net_profit)
-                    last_net_profit_Anteil = (bo_factor * (last_net_profit / 3.0)) / 100.0
-    
+                    if last_net_profit_Anteil < 0:
+                        last_net_profit_Anteil = 0.0
+                    else:
+                        last_net_profit = float(last_net_profit)
+                        last_net_profit_Anteil = (bo_factor * (last_net_profit / 3.0)) / 100.0
     
                 print("Letzter NetProfit:", last_net_profit)
                 print("Anteil:", last_net_profit_Anteil)
