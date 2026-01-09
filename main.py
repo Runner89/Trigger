@@ -1227,56 +1227,54 @@ def webhook():
                     
                     # lokal setzen
                     naechste_bo[bot_nr] = current_bo
-
-                    response = get_last_netprofit_for_side(
-                        api_key=API_KEY,
-                        secret_key=SECRET_KEY,
-                        symbol=symbol,
-                        position_side=position_side,
-                        logs=logs
-                    )
-                
-                    data = response.get_json() or {}
-    
-                    #wenn im Webhook pnl nicht 0 ist, dann soll der pnl vom Webhook verwendet werden zum testen
-                    if pnl != 0:
-                        last_net_profit = data.get("last_net_profit")
-                    else:
-                        last_net_profit = pnl
-                    
-                    if last_net_profit is None:
-                        print("Keine letzte Position gefunden.")
-                        last_net_profit_Anteil = 0.0
-                    else:
-                        if last_net_profit_Anteil < 0:
-                            last_net_profit_Anteil = 0.0
-                        else:
-                            last_net_profit = float(last_net_profit)
-                            last_net_profit_Anteil = (bo_factor * (last_net_profit / 3.0)) / 100
-
-                
                 else:
                     # 3️⃣ Fallback: Startwert
                     current_bo = 0
                     # lokal setzen
                     naechste_bo[bot_nr] = current_bo
-                    sende_telegram_nachricht(botname, f"⚠️ Startwert BO konnte weder aus Variable noch in Firebase gelesen werden, bot_nr={bot_nr}, side={position_side}")
-                
+                    sende_telegram_nachricht(botname, f"⚠️ Startwert BO konnte weder aus Variable noch in Firebase gelesen werden, bot_nr={bot_nr}, side={position_side}")            
 
-                          
-    
-                print("Letzter NetProfit:", last_net_profit)
-                print("Anteil:", last_net_profit_Anteil)
+            response = get_last_netprofit_for_side(
+                api_key=API_KEY,
+                secret_key=SECRET_KEY,
+                symbol=symbol,
+                position_side=position_side,
+                logs=logs
+            )
+        
+            data = response.get_json() or {}
+
+            #wenn im Webhook pnl nicht 0 ist, dann soll der pnl vom Webhook verwendet werden zum testen
+            if pnl != 0:
+                last_net_profit = data.get("last_net_profit")
+            else:
+                last_net_profit = pnl
+            
+            if last_net_profit is None:
+                print("Keine letzte Position gefunden.")
+                last_net_profit_Anteil = 0.0
+            else:
+                if last_net_profit_Anteil < 0:
+                    last_net_profit_Anteil = 0.0
+                else:
+                    last_net_profit = float(last_net_profit)
+                    last_net_profit_Anteil = (bo_factor * (last_net_profit / 3.0)) / 100
+
                 
-                # 4️⃣ Addieren
-                naechste_bo[bot_nr] += last_net_profit_Anteil
-                
-                # 5️⃣ Firebase überschreiben (kein Read mehr)
-                firebase_set_naechste_bo(
-                    bot_nr,
-                    float(naechste_bo[bot_nr]),
-                    firebase_secret
-                )                     
+                      
+
+            print("Letzter NetProfit:", last_net_profit)
+            print("Anteil:", last_net_profit_Anteil)
+            
+            # 4️⃣ Addieren
+            naechste_bo[bot_nr] += last_net_profit_Anteil
+            
+            # 5️⃣ Firebase überschreiben (kein Read mehr)
+            firebase_set_naechste_bo(
+                bot_nr,
+                float(naechste_bo[bot_nr]),
+                firebase_secret
+            )                     
     
             
             # Logs ausgeben
@@ -1582,6 +1580,7 @@ def webhook():
                             )
 
                             wert_fb = 0
+                            wert = wert_fb 
                             
                             #return jsonify({
                             #    "error": True,
@@ -2077,6 +2076,10 @@ def webhook():
 
             time.sleep(1.2)
 
+            # 1️⃣ Lokalen Wert holen
+            current_bo = naechste_bo.get(bot_nr)
+            
+            # 2️⃣ Falls lokal nicht brauchbar → Firebase lesen
             if not current_bo or current_bo == 0:
                 fb_value = firebase_lese_naechste_bo(bot_nr, firebase_secret)
             
@@ -2085,53 +2088,39 @@ def webhook():
                     
                     # lokal setzen
                     naechste_bo[bot_nr] = current_bo
-
-                    response = get_last_netprofit_for_side(
-                        api_key=API_KEY,
-                        secret_key=SECRET_KEY,
-                        symbol=symbol,
-                        position_side=position_side,
-                        logs=logs
-                    )
-                
-                    data = response.get_json() or {}
-    
-                    #wenn im Webhook pnl nicht 0 ist, dann soll der pnl vom Webhook verwendet werden zum testen
-                    if pnl != 0:
-                        last_net_profit = data.get("last_net_profit")
-                    else:
-                        last_net_profit = pnl
-                    
-                    if last_net_profit is None:
-                        print("Keine letzte Position gefunden.")
-                        last_net_profit_Anteil = 0.0
-                    else:
-                        if last_net_profit_Anteil < 0:
-                            last_net_profit_Anteil = 0.0
-                        else:
-                            last_net_profit = float(last_net_profit)
-                            last_net_profit_Anteil = (bo_factor * (last_net_profit / 3.0)) / 100
-
-                
                 else:
                     # 3️⃣ Fallback: Startwert
                     current_bo = 0
                     # lokal setzen
                     naechste_bo[bot_nr] = current_bo
-                    sende_telegram_nachricht(botname, f"⚠️ Startwert BO konnte weder aus Variable noch in Firebase gelesen werden, bot_nr={bot_nr}, side={position_side}")
-    
-                print("Letzter NetProfit:", last_net_profit)
-                print("Anteil:", last_net_profit_Anteil)
-                
-                # 4️⃣ Addieren
-                naechste_bo[bot_nr] += last_net_profit_Anteil
-                
-                # 5️⃣ Firebase überschreiben (kein Read mehr)
-                firebase_set_naechste_bo(
-                    bot_nr,
-                    float(naechste_bo[bot_nr]),
-                    firebase_secret
-                )                     
+                    sende_telegram_nachricht(botname, f"⚠️ Startwert BO konnte weder aus Variable noch in Firebase gelesen werden, bot_nr={bot_nr}, side={position_side}")            
+
+            response = get_last_netprofit_for_side(
+                api_key=API_KEY,
+                secret_key=SECRET_KEY,
+                symbol=symbol,
+                position_side=position_side,
+                logs=logs
+            )
+        
+            data = response.get_json() or {}
+
+            #wenn im Webhook pnl nicht 0 ist, dann soll der pnl vom Webhook verwendet werden zum testen
+            if pnl != 0:
+                last_net_profit = data.get("last_net_profit")
+            else:
+                last_net_profit = pnl
+            
+            if last_net_profit is None:
+                print("Keine letzte Position gefunden.")
+                last_net_profit_Anteil = 0.0
+            else:
+                if last_net_profit_Anteil < 0:
+                    last_net_profit_Anteil = 0.0
+                else:
+                    last_net_profit = float(last_net_profit)
+                    last_net_profit_Anteil = (bo_factor * (last_net_profit / 3.0)) / 100
+                    
             
             
             # Logs ausgeben
@@ -2385,6 +2374,7 @@ def webhook():
                             )
 
                             wert_fb = 0
+                            wert = wert_fb
                             
                             #return jsonify({
                             #    "error": True,
