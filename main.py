@@ -1230,7 +1230,7 @@ def webhook():
                 naechste_bo[bot_nr] = current_bo
                 
             # naechste_bo[bot_nr] muss grösser als 0.00000001 sein, zu Beginn wird es auf 0.00000001 gesetzt
-            if naechste_bo[bot_nr] > 0.00000001
+            if naechste_bo[bot_nr] > 0.00000001:
             
 
                 response = get_last_netprofit_for_side(
@@ -2080,7 +2080,7 @@ def webhook():
                 naechste_bo[bot_nr] = current_bo
                 
             # naechste_bo[bot_nr] muss grösser als 0.00000001 sein, zu Beginn wird es auf 0.00000001 gesetzt
-            if naechste_bo[bot_nr] > 0.00000001
+            if naechste_bo[bot_nr] > 0.00000001:
             
 
                 response = get_last_netprofit_for_side(
