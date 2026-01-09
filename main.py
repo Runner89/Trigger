@@ -1266,7 +1266,7 @@ def webhook():
             # ✅ Update berechnen (Variante A) + Untergrenze absichern
             new_bo = naechste_bo[bot_nr] + last_net_profit_Anteil
             if new_bo < 2.15:
-                new_bo = 0.15
+                new_bo = 0.015
             
             naechste_bo[bot_nr] = new_bo
 
@@ -2127,7 +2127,7 @@ def webhook():
             # ✅ Update berechnen (Variante A) + Untergrenze absichern
             new_bo = naechste_bo[bot_nr] + last_net_profit_Anteil
             if new_bo < 2.15:
-                new_bo = 0.15
+                new_bo = 0.015
             
             naechste_bo[bot_nr] = new_bo
 
