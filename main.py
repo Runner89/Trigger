@@ -1577,17 +1577,20 @@ def webhook():
                         if wert_fb is None or wert_fb == 0:
                             sende_telegram_nachricht(
                                 botname,
-                                f"⚠️ BO-Grösse konnte nicht gelesen werden oder ist 0. "
-                                f"Es wurde kein Trade eröffnet. bot_nr={bot_nr}, side={position_side}"
+                                f"⚠️ BO-Grösse konnte nicht gelesen werden. "
+                                f"BO wurde nicht erhöht. bot_nr={bot_nr}, side={position_side}"
                             )
-                            return jsonify({
-                                "error": True,
-                                "msg": "BO-Grösse konnte nicht gelesen werden oder ist 0. Keine Order gesetzt.",
-                                "wert_fb": wert_fb,
-                                "bot_nr": bot_nr,
-                                "position_side": position_side,
-                                "logs": logs
-                            }), 400
+
+                            wert_fb = 0
+                            
+                            #return jsonify({
+                            #    "error": True,
+                            #    "msg": "BO-Grösse konnte nicht gelesen werden oder ist 0. Keine Order gesetzt.",
+                            #    "wert_fb": wert_fb,
+                            #    "bot_nr": bot_nr,
+                            #    "position_side": position_side,
+                            #    "logs": logs
+                            #}), 400
                         else:
                             # Firebase-Wert ist gültig → in RAM übernehmen
                             naechste_bo[bot_nr] = wert_fb
@@ -2378,16 +2381,19 @@ def webhook():
                             sende_telegram_nachricht(
                                 botname,
                                 f"⚠️ BO-Grösse konnte nicht gelesen werden oder ist 0. "
-                                f"Es wurde kein Trade eröffnet. bot_nr={bot_nr}, side={position_side}"
+                                f"BO wurde nicht erhöht. bot_nr={bot_nr}, side={position_side}"
                             )
-                            return jsonify({
-                                "error": True,
-                                "msg": "BO-Grösse konnte nicht gelesen werden oder ist 0. Keine Order gesetzt.",
-                                "wert_fb": wert_fb,
-                                "bot_nr": bot_nr,
-                                "position_side": position_side,
-                                "logs": logs
-                            }), 400
+
+                            wert_fb = 0
+                            
+                            #return jsonify({
+                            #    "error": True,
+                            #    "msg": "BO-Grösse konnte nicht gelesen werden oder ist 0. Keine Order gesetzt.",
+                            #    "wert_fb": wert_fb,
+                            #    "bot_nr": bot_nr,
+                            #    "position_side": position_side,
+                            #    "logs": logs
+                            #}), 400
 
                         else:
                             # Firebase-Wert ist gültig → in RAM übernehmen
