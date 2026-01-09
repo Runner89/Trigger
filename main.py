@@ -49,7 +49,7 @@
 #    "sicherheit": 96, Sicherheit muss nicht mal Hebel gerechnet werden, wird im Code gemacht
 #    "usdt_factor": 1.4,
 #    "pnl": 1.4, simulierter Gewinn/Verlust
-#    "1BO": 0.2, wie viel beträgt zu Beginn die Margin der aller ersten Base Order (Gewinn wird immer fortlaufend anteilsmässig dazuaddiert)
+#    "BO1": 0.2, wie viel beträgt zu Beginn die Margin der aller ersten Base Order (Gewinn wird immer fortlaufend anteilsmässig dazuaddiert)
 #    "RTBO": 45, wie viel beträgt zu Beginn die Margin beim Recovery Trade (Gewinn wird immer fortlaufend anteilsmässig dazuaddiert)
 #    "bo_factor": 0.001, Faktor Verhältnis BO zum benötigten Guthaben für alle SOs
 #    "bo_factor2": 0.001, wie viel Prozent beträgt die BO im Verhältnis zum verfügbaren Guthaben unter Berücksichtung der Gewichtung aller SO nach einem SL
@@ -1178,7 +1178,7 @@ def webhook():
         firebase_secret = data.get("RENDER", {}).get("FIREBASE_SECRET")    #data.get("FIREBASE_SECRET")
         price_from_webhook = data.get("RENDER", {}).get("price")    #data.get("price")
         pnl = float(data.get("RENDER", {}).get("pnl", 0)) 
-        1BO = float(data.get("RENDER", {}).get("1BO", 0))    
+        BO1 = float(data.get("RENDER", {}).get("BO1", 0))    
         RTBO = float(data.get("RENDER", {}).get("RTBO", 0))  
         usdt_factor = float(data.get("RENDER", {}).get("usdt_factor", 1)) 
         bo_factor = float(data.get("RENDER", {}).get("bo_factor", 0.0001))    #float(data.get("bo_factor", 0.0001))
@@ -1593,7 +1593,7 @@ def webhook():
                     bot_nr = int(bot_nr)
                     
                     if ma_aktiv == 1:
-                        margin_budget = 1BO + wert
+                        margin_budget = BO1 + wert
                     
                         # ✅ nur wenn zuvor ein SL passiert ist -> das ist wirklich der Recovery-Trade
                         if recovery_pending.get(bot_nr) is True:
@@ -2023,7 +2023,7 @@ def webhook():
         usdt_factor = float(data.get("RENDER", {}).get("usdt_factor", 1))
         bo_factor = float(data.get("RENDER", {}).get("bo_factor", 0.0001))
         bo_factor2 = float(data.get("RENDER", {}).get("bo_factor2", 0.0001))
-        1BO = float(data.get("RENDER", {}).get("1BO", 0))    
+        BO1 = float(data.get("RENDER", {}).get("BO1", 0))    
         RTBO = float(data.get("RENDER", {}).get("RTBO", 0)) 
         pnl = float(data.get("RENDER", {}).get("pnl", 0)) 
         action = data.get("vyn", {}).get("action", "").lower()
@@ -2391,7 +2391,7 @@ def webhook():
                     bot_nr = int(bot_nr)
                     
                     if ma_aktiv == 1:
-                        margin_budget = 1BO + wert
+                        margin_budget = BO1 + wert
                     
                         # ✅ nur wenn zuvor ein SL passiert ist -> das ist wirklich der Recovery-Trade
                         if recovery_pending.get(bot_nr) is True:
