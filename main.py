@@ -1216,27 +1216,20 @@ def webhook():
 
            
             time.sleep(1.2)
-
-            # 1️⃣ Lokalen Wert holen
+            
+            # 1️⃣ lokalen Wert holen
             current_bo = naechste_bo.get(bot_nr)
             
-            # 2️⃣ Falls lokal nicht brauchbar → Firebase lesen
-            if not current_bo or current_bo == 0:
+            if current_bo is None:
                 fb_value = firebase_lese_naechste_bo(bot_nr, firebase_secret)
-            
-                if fb_value and float(fb_value) != 0:
+                if fb_value is not None and float(fb_value) != 0:
                     current_bo = float(fb_value)
-                    
-                    # lokal setzen
-                    naechste_bo[bot_nr] = current_bo
                 else:
-                    # 3️⃣ Fallback: Startwert
-                    current_bo = 0
-                    # lokal setzen
-                    naechste_bo[bot_nr] = current_bo
-                    #sende_telegram_nachricht(botname, f"⚠️ Startwert BO konnte weder aus Variable noch in Firebase gelesen werden, bot_nr={bot_nr}, side={position_side}") 
-                    
-            if naechste_bo[bot_nr] is None:
+                    current_bo = 0.0
+            
+                naechste_bo[bot_nr] = current_bo
+                                
+            if naechste_bo[bot_nr] != 0:
             
                 response = get_last_netprofit_for_side(
                     api_key=api_key,
@@ -2084,25 +2077,18 @@ def webhook():
 
             time.sleep(1.2)
 
-            # 1️⃣ Lokalen Wert holen
+            # 1️⃣ lokalen Wert holen
             current_bo = naechste_bo.get(bot_nr)
             
-            # 2️⃣ Falls lokal nicht brauchbar → Firebase lesen
-            if not current_bo or current_bo == 0:
+            if current_bo is None:
                 fb_value = firebase_lese_naechste_bo(bot_nr, firebase_secret)
-            
-                if fb_value and float(fb_value) != 0:
+                if fb_value is not None and float(fb_value) != 0:
                     current_bo = float(fb_value)
-                    
-                    # lokal setzen
-                    naechste_bo[bot_nr] = current_bo
                 else:
-                    # 3️⃣ Fallback: Startwert
-                    current_bo = 0
-                    # lokal setzen
-                    naechste_bo[bot_nr] = current_bo
-                    #sende_telegram_nachricht(botname, f"⚠️ Startwert BO konnte weder aus Variable noch in Firebase gelesen werden, bot_nr={bot_nr}, side={position_side}")        
-                    
+                    current_bo = 0.0
+            
+                naechste_bo[bot_nr] = current_bo
+                                
             if naechste_bo[bot_nr] != 0:
 
                 response = get_last_netprofit_for_side(
