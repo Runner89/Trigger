@@ -1603,7 +1603,7 @@ def webhook():
                     bot_nr = int(bot_nr)
                     
                     if ma_aktiv == 1:
-                        margin_budget = BO1 + wert
+                        margin_budget = RTBO + wert
                     
                         # ✅ nur wenn zuvor ein SL passiert ist -> das ist wirklich der Recovery-Trade
                         if recovery_pending.get(bot_nr) is True:
@@ -1616,7 +1616,7 @@ def webhook():
                             logs.append("MA=1 aber kein recovery_pending -> Recovery NICHT markiert")
                     
                     else:
-                        margin_budget = RTBO + wert
+                        margin_budget = BO1 + wert
                         
                         logs.append(f"bo_factor verwendet (MA=0): {bo_factor}")
 
@@ -2409,7 +2409,7 @@ def webhook():
                     bot_nr = int(bot_nr)
                     
                     if ma_aktiv == 1:
-                        margin_budget = BO1 + wert
+                        margin_budget = RTBO + wert
                     
                         # ✅ nur wenn zuvor ein SL passiert ist -> das ist wirklich der Recovery-Trade
                         if recovery_pending.get(bot_nr) is True:
@@ -2422,7 +2422,7 @@ def webhook():
                             logs.append("MA=1 aber kein recovery_pending -> Recovery NICHT markiert")
                     
                     else:
-                        margin_budget = RTBO + wert
+                        margin_budget = BO1 + wert
                         logs.append(f"bo_factor verwendet (MA=0): {bo_factor}")
 
 
