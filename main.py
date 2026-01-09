@@ -3,6 +3,8 @@
 
 ##### WICHTIG: In Firebase muss vor dem Start unter naechste_bo/bot_nr der Wert auf 0.00000001 gesetzt werden
 
+#Bei Verlust eines Trades wird kein Anteil abgezogen, sondern bleibt gleich
+
 #Botname wird ignoriert.
 #Market Order mit Hebel wird gesetzt
 #Hebel wird in BINGX über den Code angepasst
