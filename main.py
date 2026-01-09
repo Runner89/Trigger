@@ -616,23 +616,24 @@ def firebase_set_naechste_bo(bot_nr, wert, firebase_secret):
         )
 
 def firebase_lese_naechste_bo(bot_nr, firebase_secret):
-    """
-    Liest naechsteBO/{bot_nr}/wert aus Firebase
-    """
     url = f"{FIREBASE_URL}/naechsteBO/{bot_nr}/wert.json?auth={firebase_secret}"
-    response = requests.get(url, timeout=5)
-
-    if response.status_code != 200:
-        return None
 
     try:
+        response = requests.get(url, timeout=5)
+        if response.status_code != 200:
+            return None
+
         wert = response.json()
+
         if wert is None:
-            return 0   # Default, falls noch nichts existiert
+            return 0  # gültig: noch kein Eintrag
+
         return int(wert)
+
     except Exception as e:
-        print(f"Fehler beim Lesen von naechsteBO/{bot_nr}: {e}")
-        return 0
+        print(f"Fehler beim Lesen naechsteBO/{bot_nr}: {e}")
+        return None
+
 
 
     
@@ -1123,7 +1124,33 @@ def webhook():
             print("DEBUG ma int:", ma, type(ma))
             ergebnis = close_open_position(api_key, secret_key, symbol, position_side)
 
+            
+            # nächste BO Grösse festlegen
+            # RAM → Firebase → Telegram (Fallback)
+            
+            wert = naechste_bo_global.get(bot_nr)  # None, wenn nicht vorhanden
+            
+            # ❗ Abbruch, wenn RAM-Wert ungültig
+            if wert is None or wert == 0:
+            
+                wert_fb = firebase_lese_naechste_bo(bot_nr, firebase_secret)
+            
+                # ❗ Abbruch, wenn Firebase-Wert ebenfalls ungültig
+                if wert_fb is None or wert_fb == 0:
+                    sende_telegram_nachricht(
+                        botname,
+                        f"⚠️ BO-Grösse konnte nicht gelesen werden oder ist 0. "
+                        f"Es wurde kein Trade eröffnet. bot_nr={bot_nr}, side={position_side}"
+                    )
+                    return  # KEINE Order!
+                else:
+                    # Firebase-Wert ist gültig → in RAM übernehmen
+                    naechste_bo_global[bot_nr] = wert_fb
+                    wert = wert_fb                                   
+                
+            
             naechste_bo_global[bot_nr] = 0
+            firebase_set_naechste_bo(bot_nr, 0, firebase_secret)
             
             # Logs ausgeben
             print(ergebnis.get("logs", []))
