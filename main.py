@@ -46,6 +46,7 @@
 #    "pyramiding": 8, grösser als 0, wird nicht berücksichtig für Berechnung, es wird für BO gerechnet: (verfügbares Guthaben  - Sicherheit) * bo_factor
 #    "sicherheit": 96, Sicherheit muss nicht mal Hebel gerechnet werden, wird im Code gemacht
 #    "usdt_factor": 1.4,
+#    "pnl": 1.4, simulierter Gewinn/Verlust
 #    "1BO": 0.2, wie viel beträgt zu Beginn die Margin der aller ersten Base Order (Gewinn wird immer fortlaufend anteilsmässig dazuaddiert)
 #    "RTBO": 45, wie viel beträgt zu Beginn die Margin beim Recovery Trade (Gewinn wird immer fortlaufend anteilsmässig dazuaddiert)
 #    "bo_factor": 0.001, Faktor Verhältnis BO zum benötigten Guthaben für alle SOs
@@ -1174,6 +1175,7 @@ def webhook():
         position_side = data.get("RENDER", {}).get("position_side") or data.get("RENDER", {}).get("positionSide") or "LONG"    #data.get("position_side") or data.get("positionSide") or "LONG"
         firebase_secret = data.get("RENDER", {}).get("FIREBASE_SECRET")    #data.get("FIREBASE_SECRET")
         price_from_webhook = data.get("RENDER", {}).get("price")    #data.get("price")
+        pnl = float(data.get("RENDER", {}).get("pnl", 0)) 
         1BO = float(data.get("RENDER", {}).get("1BO", 0))    
         RTBO = float(data.get("RENDER", {}).get("RTBO", 0))  
         usdt_factor = float(data.get("RENDER", {}).get("usdt_factor", 1)) 
@@ -1204,7 +1206,8 @@ def webhook():
             print("DEBUG ma raw:", data.get("RENDER", {}).get("ma"), type(data.get("RENDER", {}).get("ma")))
             print("DEBUG ma int:", ma, type(ma))
             ergebnis = close_open_position(api_key, secret_key, symbol, position_side)
-            
+
+           
             time.sleep(1.5)
 
             # 1️⃣ Lokalen Wert holen
@@ -1222,39 +1225,42 @@ def webhook():
             
                 # lokal setzen
                 naechste_bo[bot_nr] = current_bo
+                
+            # naechste_bo[bot_nr] muss grösser sein als 1BO, naechste_bo[bot_nr] wird zu Beginn manuell auf 1BO gesetzt
+            if naechste_bo[bot_nr] > 1BO
             
 
-            response = get_last_netprofit_for_side(
-                api_key=API_KEY,
-                secret_key=SECRET_KEY,
-                symbol=symbol,
-                position_side=position_side,
-                logs=logs
-            )
-            
-            data = response.get_json() or {}
-            last_net_profit = data.get("last_net_profit")
-            
-            if last_net_profit is None:
-                print("Keine letzte Position gefunden.")
-                last_net_profit_Anteil = 0.0
-            else:
-                last_net_profit = float(last_net_profit)
-                last_net_profit_Anteil = (bo_factor * (last_net_profit / 3.0)) / 100.0
-
-
-            print("Letzter NetProfit:", last_net_profit)
-            print("Anteil:", last_net_profit_Anteil)
-            
-            # 4️⃣ Addieren
-            naechste_bo[bot_nr] += last_net_profit_Anteil
-            
-            # 5️⃣ Firebase überschreiben (kein Read mehr)
-            firebase_set_naechste_bo(
-                bot_nr,
-                float(naechste_bo[bot_nr]),
-                firebase_secret
-            )                     
+                response = get_last_netprofit_for_side(
+                    api_key=API_KEY,
+                    secret_key=SECRET_KEY,
+                    symbol=symbol,
+                    position_side=position_side,
+                    logs=logs
+                )
+                
+                data = response.get_json() or {}
+                last_net_profit = data.get("last_net_profit")
+                
+                if last_net_profit is None:
+                    print("Keine letzte Position gefunden.")
+                    last_net_profit_Anteil = 0.0
+                else:
+                    last_net_profit = float(last_net_profit)
+                    last_net_profit_Anteil = (bo_factor * (last_net_profit / 3.0)) / 100.0
+    
+    
+                print("Letzter NetProfit:", last_net_profit)
+                print("Anteil:", last_net_profit_Anteil)
+                
+                # 4️⃣ Addieren
+                naechste_bo[bot_nr] += last_net_profit_Anteil
+                
+                # 5️⃣ Firebase überschreiben (kein Read mehr)
+                firebase_set_naechste_bo(
+                    bot_nr,
+                    float(naechste_bo[bot_nr]),
+                    firebase_secret
+                )                     
     
             
             # Logs ausgeben
