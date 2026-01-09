@@ -1,6 +1,7 @@
 #31.12.2025
 #nicht vyn
 
+##### WICHTIG: In Firebase muss vor dem Start unter naechste_bo/bot_nr der Wert von 1BO eingetragen werden. 
 
 #Botname wird ignoriert.
 #Market Order mit Hebel wird gesetzt
@@ -1221,7 +1222,7 @@ def webhook():
             
                 # lokal setzen
                 naechste_bo[bot_nr] = current_bo
-
+            
 
             response = get_last_netprofit_for_side(
                 api_key=API_KEY,
@@ -1253,39 +1254,7 @@ def webhook():
                 bot_nr,
                 float(naechste_bo[bot_nr]),
                 firebase_secret
-            )
-
-
-
-
-
-
-
-            
-            # nächste BO Grösse festlegen
-            # RAM → Firebase → Telegram (Fallback)
-            
-            wert = naechste_bo.get(bot_nr)  # None, wenn nicht vorhanden
-            
-            # ❗ Abbruch, wenn RAM-Wert ungültig
-            if wert is None or wert == 0:
-            
-                wert_fb = firebase_lese_naechste_bo(bot_nr, firebase_secret)
-            
-                # ❗ Abbruch, wenn Firebase-Wert ebenfalls ungültig
-                if wert_fb is None or wert_fb == 0:
-                    sende_telegram_nachricht(
-                        botname,
-                        f"⚠️ BO-Grösse konnte nicht gelesen werden oder ist 0. "
-                        f"Es wurde kein Trade eröffnet. bot_nr={bot_nr}, side={position_side}"
-                    )
-                    return  # KEINE Order!
-                else:
-                    # Firebase-Wert ist gültig → in RAM übernehmen
-                    naechste_bo[bot_nr] = wert_fb
-                    wert = wert_fb                                   
-                
-            
+            )                     
     
             
             # Logs ausgeben
@@ -1569,6 +1538,31 @@ def webhook():
                     position_margin = float(balance_data.get("usedMargin", 0))
                     
                     account_size = available_margin + position_margin
+
+
+            
+                    # nächste BO Grösse festlegen
+                    # RAM → Firebase → Telegram (Fallback)
+                    
+                    wert = naechste_bo.get(bot_nr)  # None, wenn nicht vorhanden
+                    
+                    # ❗ Abbruch, wenn RAM-Wert ungültig
+                    if wert is None or wert == 0:
+                    
+                        wert_fb = firebase_lese_naechste_bo(bot_nr, firebase_secret)
+                    
+                        # ❗ Abbruch, wenn Firebase-Wert ebenfalls ungültig
+                        if wert_fb is None or wert_fb == 0:
+                            sende_telegram_nachricht(
+                                botname,
+                                f"⚠️ BO-Grösse konnte nicht gelesen werden oder ist 0. "
+                                f"Es wurde kein Trade eröffnet. bot_nr={bot_nr}, side={position_side}"
+                            )
+                            return  # KEINE Order!
+                        else:
+                            # Firebase-Wert ist gültig → in RAM übernehmen
+                            naechste_bo[bot_nr] = wert_fb
+                            wert = wert_fb                              
 
                     # === BO-Faktor abhängig von MA bestimmen (NUR Baseorder) ===
                     if bot_nr in ma_Wert:
