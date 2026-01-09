@@ -115,6 +115,44 @@ def get_position_history(api_key, secret_key, symbol, start_ms, end_ms, limit=20
     }
     return send_signed_request("GET", endpoint, api_key, secret_key, params)
 
+def firebase_cycle_started_read(bot_nr, firebase_secret):
+    """Liest cycleStarted/{bot_nr}. Gibt None zurück, wenn Key nicht existiert oder Fehler."""
+    url = f"{FIREBASE_URL}/cycleStarted/{int(bot_nr)}.json?auth={firebase_secret}"
+    try:
+        r = requests.get(url, timeout=5)
+        if r.status_code != 200:
+            return None
+        return r.json()  # None (missing) oder True/False
+    except Exception as e:
+        print(f"Fehler beim Lesen cycleStarted/{bot_nr}: {e}")
+        return None
+
+
+def firebase_cycle_started_write(bot_nr, firebase_secret, value: bool):
+    """Schreibt cycleStarted/{bot_nr} = true/false."""
+    url = f"{FIREBASE_URL}/cycleStarted/{int(bot_nr)}.json?auth={firebase_secret}"
+    try:
+        r = requests.put(url, json=bool(value), timeout=5)
+        r.raise_for_status()
+        return r.json()
+    except Exception as e:
+        print(f"Fehler beim Schreiben cycleStarted/{bot_nr}: {e}")
+        return None
+
+
+def firebase_cycle_started_delete(bot_nr, firebase_secret):
+    """Löscht cycleStarted/{bot_nr}."""
+    url = f"{FIREBASE_URL}/cycleStarted/{int(bot_nr)}.json?auth={firebase_secret}"
+    try:
+        r = requests.delete(url, timeout=5)
+        # delete kann auch bei missing ok sein
+        if r.status_code not in (200, 204):
+            print(f"Warnung: Delete cycleStarted/{bot_nr} Status {r.status_code}")
+        return True
+    except Exception as e:
+        print(f"Fehler beim Löschen cycleStarted/{bot_nr}: {e}")
+        return False
+
 def cycle_started_get(bot_nr, firebase_secret):
     bot_nr = int(bot_nr)
 
