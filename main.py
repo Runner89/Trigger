@@ -1579,6 +1579,7 @@ def webhook():
                             return jsonify({
                                 "error": True,
                                 "msg": "BO-Grösse konnte nicht gelesen werden oder ist 0. Keine Order gesetzt.",
+                                "wert_fb": wert_fb,
                                 "bot_nr": bot_nr,
                                 "position_side": position_side,
                                 "logs": logs
