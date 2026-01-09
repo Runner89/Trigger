@@ -1239,7 +1239,12 @@ def webhook():
                 )
                 
                 data = response.get_json() or {}
-                last_net_profit = data.get("last_net_profit")
+
+                #wenn im Webhook pnl nicht 0 ist, dann soll der pnl vom Webhook verwendet werden zum testen
+                if pnl != 0:
+                    last_net_profit = data.get("last_net_profit")
+                else:
+                    last_net_profit = pnl
                 
                 if last_net_profit is None:
                     print("Keine letzte Position gefunden.")
