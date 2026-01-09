@@ -47,7 +47,7 @@
 #    "usdt_factor": 1.4,
 #    "1BO": 0.2, wie viel beträgt zu Beginn die Margin der aller ersten Base Order (Gewinn wird immer fortlaufend anteilsmässig dazuaddiert)
 #    "RTBO": 45, wie viel beträgt zu Beginn die Margin beim Recovery Trade (Gewinn wird immer fortlaufend anteilsmässig dazuaddiert)
-#    "bo_factor": 0.001, wie viel Prozent beträgt die BO im Verhältnis zum verfügbaren Guthaben unter Berücksichtung der Gewichtung aller SO
+#    "bo_factor": 0.001, Faktor Verhältnis BO zum benötigten Guthaben für alle SOs
 #    "bo_factor2": 0.001, wie viel Prozent beträgt die BO im Verhältnis zum verfügbaren Guthaben unter Berücksichtung der Gewichtung aller SO nach einem SL
 #    "base_time2": "", darf nur beim Testen Inhalt enthalten, 2025-08-22T11:22:37.986015+00:00, simulierter Zeitpunkt der BO
 #    "after_h": 48, nach x Stunden seit BO wird Sell-Limit-Order beim nächsten Kauf auf x Prozent gesetzt oder
@@ -1239,7 +1239,7 @@ def webhook():
                 last_net_profit_Anteil = 0.0
             else:
                 last_net_profit = float(last_net_profit)
-                last_net_profit_Anteil = (10.0705745867036 * (last_net_profit / 3.0)) / 100.0
+                last_net_profit_Anteil = (bo_factor * (last_net_profit / 3.0)) / 100.0
 
 
             print("Letzter NetProfit:", last_net_profit)
