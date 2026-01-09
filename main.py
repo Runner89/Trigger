@@ -1,7 +1,8 @@
 #31.12.2025
 #nicht vyn
 
-##### WICHTIG: In Firebase muss vor dem Start unter naechste_bo/bot_nr der Wert auf 0.00000001 gesetzt werden
+##### WICHTIG: In Firebase darf vor dem Start unter naechste_bo/bot_nr nichts stehen, als die bot_nr löschen
+##### Bei der allerersten Baseorder und beim allerersten Close-Befehl kommt jeweils eine Telegramm Meldung, welche aber ignoriert werden kann. 
 
 #Bei Verlust eines Trades wird kein Anteil abgezogen, sondern bleibt gleich
 
