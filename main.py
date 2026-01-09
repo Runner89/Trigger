@@ -1235,8 +1235,8 @@ def webhook():
                     sende_telegram_nachricht(botname, f"⚠️ Startwert BO konnte weder aus Variable noch in Firebase gelesen werden, bot_nr={bot_nr}, side={position_side}")            
 
             response = get_last_netprofit_for_side(
-                api_key=API_KEY,
-                secret_key=SECRET_KEY,
+                api_key=api_key,
+                secret_key=secret_key,
                 symbol=symbol,
                 position_side=position_side,
                 logs=logs
@@ -2096,8 +2096,8 @@ def webhook():
                     sende_telegram_nachricht(botname, f"⚠️ Startwert BO konnte weder aus Variable noch in Firebase gelesen werden, bot_nr={bot_nr}, side={position_side}")            
 
             response = get_last_netprofit_for_side(
-                api_key=API_KEY,
-                secret_key=SECRET_KEY,
+                api_key=api_key,
+                secret_key=secret_key,
                 symbol=symbol,
                 position_side=position_side,
                 logs=logs
