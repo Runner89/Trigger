@@ -1224,44 +1224,46 @@ def webhook():
             
                 if fb_value and float(fb_value) != 0:
                     current_bo = float(fb_value)
-                else:
-                    # 3️⃣ Fallback: Startwert
-                    current_bo = 0.00000001
-                    sende_telegram_nachricht(botname, f"⚠️ Startwert BO konnte weder aus Variable noch in Firebase gelesen werden, bot_nr={bot_nr}, side={position_side}")
-            
-                # lokal setzen
-                naechste_bo[bot_nr] = current_bo
-                
-            # naechste_bo[bot_nr] muss grösser als 0.00000001 sein, zu Beginn wird es auf 0.00000001 gesetzt
-            if naechste_bo[bot_nr] > 0.00000001:
-            
+                    
+                    # lokal setzen
+                    naechste_bo[bot_nr] = current_bo
 
-                response = get_last_netprofit_for_side(
-                    api_key=API_KEY,
-                    secret_key=SECRET_KEY,
-                    symbol=symbol,
-                    position_side=position_side,
-                    logs=logs
-                )
+                    response = get_last_netprofit_for_side(
+                        api_key=API_KEY,
+                        secret_key=SECRET_KEY,
+                        symbol=symbol,
+                        position_side=position_side,
+                        logs=logs
+                    )
                 
-                data = response.get_json() or {}
-
-                #wenn im Webhook pnl nicht 0 ist, dann soll der pnl vom Webhook verwendet werden zum testen
-                if pnl != 0:
-                    last_net_profit = data.get("last_net_profit")
-                else:
-                    last_net_profit = pnl
-                
-                if last_net_profit is None:
-                    print("Keine letzte Position gefunden.")
-                    last_net_profit_Anteil = 0.0
-                else:
-                    if last_net_profit_Anteil < 0:
+                    data = response.get_json() or {}
+    
+                    #wenn im Webhook pnl nicht 0 ist, dann soll der pnl vom Webhook verwendet werden zum testen
+                    if pnl != 0:
+                        last_net_profit = data.get("last_net_profit")
+                    else:
+                        last_net_profit = pnl
+                    
+                    if last_net_profit is None:
+                        print("Keine letzte Position gefunden.")
                         last_net_profit_Anteil = 0.0
                     else:
-                        last_net_profit = float(last_net_profit)
-                        last_net_profit_Anteil = (bo_factor * (last_net_profit / 3.0)) / 100.0
-    
+                        if last_net_profit_Anteil < 0:
+                            last_net_profit_Anteil = 0.0
+                        else:
+                            last_net_profit = float(last_net_profit)
+                            last_net_profit_Anteil = (bo_factor * (last_net_profit / 3.0)) / 100
+
+                
+                else:
+                    # 3️⃣ Fallback: Startwert
+                    current_bo = 0
+                    # lokal setzen
+                    naechste_bo[bot_nr] = current_bo
+                    sende_telegram_nachricht(botname, f"⚠️ Startwert BO konnte weder aus Variable noch in Firebase gelesen werden, bot_nr={bot_nr}, side={position_side}")
+                
+
+                          
     
                 print("Letzter NetProfit:", last_net_profit)
                 print("Anteil:", last_net_profit_Anteil)
@@ -2072,52 +2074,48 @@ def webhook():
 
             time.sleep(1.2)
 
-            # 1️⃣ Lokalen Wert holen
-            current_bo = naechste_bo.get(bot_nr)
-            
-            # 2️⃣ Falls lokal nicht brauchbar → Firebase lesen
             if not current_bo or current_bo == 0:
                 fb_value = firebase_lese_naechste_bo(bot_nr, firebase_secret)
             
                 if fb_value and float(fb_value) != 0:
                     current_bo = float(fb_value)
-                else:
-                    # 3️⃣ Fallback: Startwert
-                    current_bo = 0.00000001
-                    sende_telegram_nachricht(botname, f"⚠️ Startwert BO konnte weder aus Variable noch in Firebase gelesen werden, bot_nr={bot_nr}, side={position_side}")
-            
-                # lokal setzen
-                naechste_bo[bot_nr] = current_bo
-                
-            # naechste_bo[bot_nr] muss grösser als 0.00000001 sein, zu Beginn wird es auf 0.00000001 gesetzt
-            if naechste_bo[bot_nr] > 0.00000001:
-            
+                    
+                    # lokal setzen
+                    naechste_bo[bot_nr] = current_bo
 
-                response = get_last_netprofit_for_side(
-                    api_key=API_KEY,
-                    secret_key=SECRET_KEY,
-                    symbol=symbol,
-                    position_side=position_side,
-                    logs=logs
-                )
+                    response = get_last_netprofit_for_side(
+                        api_key=API_KEY,
+                        secret_key=SECRET_KEY,
+                        symbol=symbol,
+                        position_side=position_side,
+                        logs=logs
+                    )
                 
-                data = response.get_json() or {}
-
-                #wenn im Webhook pnl nicht 0 ist, dann soll der pnl vom Webhook verwendet werden zum testen
-                if pnl != 0:
-                    last_net_profit = data.get("last_net_profit")
-                else:
-                    last_net_profit = pnl
-                
-                if last_net_profit is None:
-                    print("Keine letzte Position gefunden.")
-                    last_net_profit_Anteil = 0.0
-                else:
-                    if last_net_profit_Anteil < 0:
+                    data = response.get_json() or {}
+    
+                    #wenn im Webhook pnl nicht 0 ist, dann soll der pnl vom Webhook verwendet werden zum testen
+                    if pnl != 0:
+                        last_net_profit = data.get("last_net_profit")
+                    else:
+                        last_net_profit = pnl
+                    
+                    if last_net_profit is None:
+                        print("Keine letzte Position gefunden.")
                         last_net_profit_Anteil = 0.0
                     else:
-                        last_net_profit = float(last_net_profit)
-                        last_net_profit_Anteil = (bo_factor * (last_net_profit / 3.0)) / 100.0
+                        if last_net_profit_Anteil < 0:
+                            last_net_profit_Anteil = 0.0
+                        else:
+                            last_net_profit = float(last_net_profit)
+                            last_net_profit_Anteil = (bo_factor * (last_net_profit / 3.0)) / 100
+
+                
+                else:
+                    # 3️⃣ Fallback: Startwert
+                    current_bo = 0
+                    # lokal setzen
+                    naechste_bo[bot_nr] = current_bo
+                    sende_telegram_nachricht(botname, f"⚠️ Startwert BO konnte weder aus Variable noch in Firebase gelesen werden, bot_nr={bot_nr}, side={position_side}")
     
                 print("Letzter NetProfit:", last_net_profit)
                 print("Anteil:", last_net_profit_Anteil)
