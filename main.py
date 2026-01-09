@@ -1576,7 +1576,13 @@ def webhook():
                                 f"⚠️ BO-Grösse konnte nicht gelesen werden oder ist 0. "
                                 f"Es wurde kein Trade eröffnet. bot_nr={bot_nr}, side={position_side}"
                             )
-                            return  # KEINE Order!
+                            return jsonify({
+                                "error": True,
+                                "msg": "BO-Grösse konnte nicht gelesen werden oder ist 0. Keine Order gesetzt.",
+                                "bot_nr": bot_nr,
+                                "position_side": position_side,
+                                "logs": logs
+                            }), 400
                         else:
                             # Firebase-Wert ist gültig → in RAM übernehmen
                             naechste_bo[bot_nr] = wert_fb
@@ -2373,7 +2379,14 @@ def webhook():
                                 f"⚠️ BO-Grösse konnte nicht gelesen werden oder ist 0. "
                                 f"Es wurde kein Trade eröffnet. bot_nr={bot_nr}, side={position_side}"
                             )
-                            return  # KEINE Order!
+                        return jsonify({
+                            "error": True,
+                            "msg": "BO-Grösse konnte nicht gelesen werden oder ist 0. Keine Order gesetzt.",
+                            "bot_nr": bot_nr,
+                            "position_side": position_side,
+                            "logs": logs
+                        }), 400
+
                         else:
                             # Firebase-Wert ist gültig → in RAM übernehmen
                             naechste_bo[bot_nr] = wert_fb
