@@ -713,7 +713,7 @@ def firebase_lese_naechste_bo(bot_nr, firebase_secret):
         if wert is None:
             return 0  # gültig: noch kein Eintrag
 
-        return int(wert)
+        return float(wert)
 
     except Exception as e:
         print(f"Fehler beim Lesen naechsteBO/{bot_nr}: {e}")
