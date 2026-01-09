@@ -1234,51 +1234,53 @@ def webhook():
                     current_bo = 0
                     # lokal setzen
                     naechste_bo[bot_nr] = current_bo
-                    sende_telegram_nachricht(botname, f"⚠️ Startwert BO konnte weder aus Variable noch in Firebase gelesen werden, bot_nr={bot_nr}, side={position_side}")            
-
-            response = get_last_netprofit_for_side(
-                api_key=api_key,
-                secret_key=secret_key,
-                symbol=symbol,
-                position_side=position_side,
-                logs=logs
-            )
-        
-            data = response.get_json() or {}
-
+                    sende_telegram_nachricht(botname, f"⚠️ Startwert BO konnte weder aus Variable noch in Firebase gelesen werden, bot_nr={bot_nr}, side={position_side}") 
+                    
+            if float(naechste_bo.get(bot_nr,)) != 0:
             
-
-            #wenn im Webhook pnl nicht 0 ist, dann soll der pnl vom Webhook verwendet werden zum testen
-            if pnl != 0:
-                last_net_profit = pnl
-            else:
-                last_net_profit = data.get("last_net_profit")
+                response = get_last_netprofit_for_side(
+                    api_key=api_key,
+                    secret_key=secret_key,
+                    symbol=symbol,
+                    position_side=position_side,
+                    logs=logs
+                )
             
-            if last_net_profit is None:
-                print("Keine letzte Position gefunden.")
-                last_net_profit_Anteil = 0.0
-            else:
-                last_net_profit = float(last_net_profit)
-
-                last_net_profit_Anteil = (bo_factor * (last_net_profit / 3.0)) / 100
+                data = response.get_json() or {}
+    
                 
-
-            # ✅ Update berechnen (Variante A) + Untergrenze absichern
-            new_bo = naechste_bo[bot_nr] + last_net_profit_Anteil
-            if new_bo < 2.15:
-                new_bo = 0.015
-            
-            naechste_bo[bot_nr] = new_bo
-
-            print("Letzter NetProfit:", last_net_profit)
-            print("Anteil:", last_net_profit_Anteil)
-            
-            # 5️⃣ Firebase überschreiben (kein Read mehr)
-            firebase_set_naechste_bo(
-                bot_nr,
-                float(naechste_bo[bot_nr]),
-                firebase_secret
-            )                     
+    
+                #wenn im Webhook pnl nicht 0 ist, dann soll der pnl vom Webhook verwendet werden zum testen
+                if pnl != 0:
+                    last_net_profit = pnl
+                else:
+                    last_net_profit = data.get("last_net_profit")
+                
+                if last_net_profit is None:
+                    print("Keine letzte Position gefunden.")
+                    last_net_profit_Anteil = 0.0
+                else:
+                    last_net_profit = float(last_net_profit)
+    
+                    last_net_profit_Anteil = (bo_factor * (last_net_profit / 3.0)) / 100
+                    
+    
+                # ✅ Update berechnen (Variante A) + Untergrenze absichern
+                new_bo = naechste_bo[bot_nr] + last_net_profit_Anteil
+                if new_bo < 2.15:
+                    new_bo = 0.015
+                
+                naechste_bo[bot_nr] = new_bo
+    
+                print("Letzter NetProfit:", last_net_profit)
+                print("Anteil:", last_net_profit_Anteil)
+                
+                # 5️⃣ Firebase überschreiben (kein Read mehr)
+                firebase_set_naechste_bo(
+                    bot_nr,
+                    float(naechste_bo[bot_nr]),
+                    firebase_secret
+                )                     
     
             
             # Logs ausgeben
@@ -2097,49 +2099,51 @@ def webhook():
                     current_bo = 0
                     # lokal setzen
                     naechste_bo[bot_nr] = current_bo
-                    sende_telegram_nachricht(botname, f"⚠️ Startwert BO konnte weder aus Variable noch in Firebase gelesen werden, bot_nr={bot_nr}, side={position_side}")            
+                    sende_telegram_nachricht(botname, f"⚠️ Startwert BO konnte weder aus Variable noch in Firebase gelesen werden, bot_nr={bot_nr}, side={position_side}")        
+                    
+            if float(naechste_bo.get(bot_nr,)) != 0:
 
-            response = get_last_netprofit_for_side(
-                api_key=api_key,
-                secret_key=secret_key,
-                symbol=symbol,
-                position_side=position_side,
-                logs=logs
-            )
-        
-            data = response.get_json() or {}
-
-            #wenn im Webhook pnl nicht 0 ist, dann soll der pnl vom Webhook verwendet werden zum testen
-            if pnl != 0:
-                last_net_profit = pnl
+                response = get_last_netprofit_for_side(
+                    api_key=api_key,
+                    secret_key=secret_key,
+                    symbol=symbol,
+                    position_side=position_side,
+                    logs=logs
+                )
+            
+                data = response.get_json() or {}
+    
+                #wenn im Webhook pnl nicht 0 ist, dann soll der pnl vom Webhook verwendet werden zum testen
+                if pnl != 0:
+                    last_net_profit = pnl
+                    
+                else:
+                    last_net_profit = data.get("last_net_profit")
                 
-            else:
-                last_net_profit = data.get("last_net_profit")
-            
-            if last_net_profit is None:
-                print("Keine letzte Position gefunden.")
-                last_net_profit_Anteil = 0.0
-            else:
-                last_net_profit = float(last_net_profit)
-
-                last_net_profit_Anteil = (bo_factor * (last_net_profit / 3.0)) / 100
-
-            # ✅ Update berechnen (Variante A) + Untergrenze absichern
-            new_bo = naechste_bo[bot_nr] + last_net_profit_Anteil
-            if new_bo < 2.15:
-                new_bo = 0.015
-            
-            naechste_bo[bot_nr] = new_bo
-
-            print("Letzter NetProfit:", last_net_profit)
-            print("Anteil:", last_net_profit_Anteil)
-            
-            # 5️⃣ Firebase überschreiben (kein Read mehr)
-            firebase_set_naechste_bo(
-                bot_nr,
-                float(naechste_bo[bot_nr]),
-                firebase_secret
-            )                   
+                if last_net_profit is None:
+                    print("Keine letzte Position gefunden.")
+                    last_net_profit_Anteil = 0.0
+                else:
+                    last_net_profit = float(last_net_profit)
+    
+                    last_net_profit_Anteil = (bo_factor * (last_net_profit / 3.0)) / 100
+    
+                # ✅ Update berechnen (Variante A) + Untergrenze absichern
+                new_bo = naechste_bo[bot_nr] + last_net_profit_Anteil
+                if new_bo < 2.15:
+                    new_bo = 0.015
+                
+                naechste_bo[bot_nr] = new_bo
+    
+                print("Letzter NetProfit:", last_net_profit)
+                print("Anteil:", last_net_profit_Anteil)
+                
+                # 5️⃣ Firebase überschreiben (kein Read mehr)
+                firebase_set_naechste_bo(
+                    bot_nr,
+                    float(naechste_bo[bot_nr]),
+                    firebase_secret
+                )                   
                     
             
             # Logs ausgeben
