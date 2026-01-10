@@ -116,78 +116,78 @@ def get_position_history(api_key, secret_key, symbol, start_ms, end_ms, limit=20
     }
     return send_signed_request("GET", endpoint, api_key, secret_key, params)
 
-def firebase_cycle_started_read(bot_nr, firebase_secret):
-    """Liest cycleStarted/{bot_nr}. Gibt None zurück, wenn Key nicht existiert oder Fehler."""
-    url = f"{FIREBASE_URL}/cycleStarted/{int(bot_nr)}.json?auth={firebase_secret}"
+def firebase_cycle_started_read(botname, firebase_secret):
+    """Liest cycleStarted/{botname}. Gibt None zurück, wenn Key nicht existiert oder Fehler."""
+    url = f"{FIREBASE_URL}/cycleStarted/{botname}.json?auth={firebase_secret}"
     try:
         r = requests.get(url, timeout=5)
         if r.status_code != 200:
             return None
         return r.json()  # None (missing) oder True/False
     except Exception as e:
-        print(f"Fehler beim Lesen cycleStarted/{bot_nr}: {e}")
+        print(f"Fehler beim Lesen cycleStarted/{botname}: {e}")
         return None
 
 
-def firebase_cycle_started_write(bot_nr, firebase_secret, value: bool):
-    """Schreibt cycleStarted/{bot_nr} = true/false."""
-    url = f"{FIREBASE_URL}/cycleStarted/{int(bot_nr)}.json?auth={firebase_secret}"
+def firebase_cycle_started_write(botname, firebase_secret, value: bool):
+    """Schreibt cycleStarted/{botname} = true/false."""
+    url = f"{FIREBASE_URL}/cycleStarted/{botname}.json?auth={firebase_secret}"
     try:
         r = requests.put(url, json=bool(value), timeout=5)
         r.raise_for_status()
         return r.json()
     except Exception as e:
-        print(f"Fehler beim Schreiben cycleStarted/{bot_nr}: {e}")
+        print(f"Fehler beim Schreiben cycleStarted/{botname}: {e}")
         return None
 
 
-def firebase_cycle_started_delete(bot_nr, firebase_secret):
-    """Löscht cycleStarted/{bot_nr}."""
-    url = f"{FIREBASE_URL}/cycleStarted/{int(bot_nr)}.json?auth={firebase_secret}"
+def firebase_cycle_started_delete(botname, firebase_secret):
+    """Löscht cycleStarted/{botname}."""
+    url = f"{FIREBASE_URL}/cycleStarted/{botname}.json?auth={firebase_secret}"
     try:
         r = requests.delete(url, timeout=5)
         # delete kann auch bei missing ok sein
         if r.status_code not in (200, 204):
-            print(f"Warnung: Delete cycleStarted/{bot_nr} Status {r.status_code}")
+            print(f"Warnung: Delete cycleStarted/{botname} Status {r.status_code}")
         return True
     except Exception as e:
-        print(f"Fehler beim Löschen cycleStarted/{bot_nr}: {e}")
+        print(f"Fehler beim Löschen cycleStarted/{botname}: {e}")
         return False
 
-def cycle_started_get(bot_nr, firebase_secret):
-    bot_nr = int(bot_nr)
+def cycle_started_get(botname, firebase_secret):
+    
 
     # 1) RAM hat Priorität
-    if bot_nr in cycle_started:
-        return bool(cycle_started[bot_nr])
+    if botname in cycle_started:
+        return bool(cycle_started[botname])
 
     # 2) Fallback: Firebase
-    fb = firebase_cycle_started_read(bot_nr, firebase_secret)
+    fb = firebase_cycle_started_read(botname, firebase_secret)
 
     # Key fehlt in Firebase -> nicht gestartet
     if fb is None:
-        cycle_started[bot_nr] = False
+        cycle_started[botname] = False
         return False
 
     # Wenn Firebase True/False liefert:
     started = bool(fb)
-    cycle_started[bot_nr] = started
+    cycle_started[botname] = started
     return started
 
-def cycle_started_set(bot_nr, firebase_secret, value: bool, mirror_to_firebase: bool = True):
-    bot_nr = int(bot_nr)
-    cycle_started[bot_nr] = bool(value)
+def cycle_started_set(botname, firebase_secret, value: bool, mirror_to_firebase: bool = True):
+    
+    cycle_started[botname] = bool(value)
 
     # Optional spiegeln (damit Restart-sicher)
     if mirror_to_firebase:
-        firebase_cycle_started_write(bot_nr, firebase_secret, bool(value))
+        firebase_cycle_started_write(botname, firebase_secret, bool(value))
 
-def cycle_started_clear(bot_nr, firebase_secret, mirror_to_firebase: bool = True):
-    bot_nr = int(bot_nr)
-    cycle_started.pop(bot_nr, None)
+def cycle_started_clear(botname, firebase_secret, mirror_to_firebase: bool = True):
+    
+    cycle_started.pop(botname, None)
 
     if mirror_to_firebase:
-        firebase_cycle_started_delete(bot_nr, firebase_secret)
+        firebase_cycle_started_delete(botname, firebase_secret)
 
 
 
@@ -1352,10 +1352,10 @@ def webhook():
                     current_bo = 0.0
                 naechste_bo[bot_nr] = current_bo
 
-            cycle_before = cycle_started_get(bot_nr, firebase_secret)
+            cycle_before = cycle_started_get(botname, firebase_secret)
            
             #if not naechste_bo_missing_ram_then_firebase(bot_nr, firebase_secret, naechste_bo):
-            #if cycle_started_get(bot_nr, firebase_secret):
+            #if cycle_started_get(botname, firebase_secret):
 
             raw_new_bo = None
             new_bo = None
@@ -1424,7 +1424,7 @@ def webhook():
                     firebase_secret
                 )  
                 
-            cycle_started_clear(bot_nr, firebase_secret, mirror_to_firebase=True)
+            cycle_started_clear(botname, firebase_secret, mirror_to_firebase=True)
             
             # Logs ausgeben
             print(ergebnis.get("logs", []))
@@ -1492,7 +1492,7 @@ def webhook():
                     print(f"Fehler beim Löschen von Kaufpreisen/Ordergrößen für {botname}: {e}")
     
              # **Hier ein Response zurückgeben**
-            cycle_val = cycle_started_get(bot_nr, firebase_secret)
+            cycle_val = cycle_started_get(botname, firebase_secret)
 
 
             return jsonify({
@@ -1502,7 +1502,7 @@ def webhook():
                     "bot_nr": int(bot_nr),
             
                     "cycle_before_clear": cycle_before,
-                    "cycle_after_clear": cycle_started_get(bot_nr, firebase_secret),
+                    "cycle_after_clear": cycle_started_get(botname, firebase_secret),
             
                     "naechste_before": debug_naechste_before,
                     "last_net_profit_anteil": debug_last_net_profit_anteil,
@@ -1859,7 +1859,7 @@ def webhook():
                 logs.append(firebase_speichere_ordergroesse(botname, usdt_amount, firebase_secret))
                 time.sleep(1.5)
                 
-                cycle_started_set(bot_nr, firebase_secret, True, mirror_to_firebase=True)
+                cycle_started_set(botname, firebase_secret, True, mirror_to_firebase=True)
               
                 
                 logs.append(f"Market-Order Antwort: {order_response}")
@@ -2273,10 +2273,10 @@ def webhook():
                     current_bo = 0.0
                 naechste_bo[bot_nr] = current_bo
 
-            cycle_before = cycle_started_get(bot_nr, firebase_secret)
+            cycle_before = cycle_started_get(botname, firebase_secret)
            
             #if not naechste_bo_missing_ram_then_firebase(bot_nr, firebase_secret, naechste_bo):
-            #if cycle_started_get(bot_nr, firebase_secret):
+            #if cycle_started_get(botname, firebase_secret):
 
             raw_new_bo = None
             new_bo = None
@@ -2345,7 +2345,7 @@ def webhook():
                     firebase_secret
                 )  
                 
-            cycle_started_clear(bot_nr, firebase_secret, mirror_to_firebase=True)
+            cycle_started_clear(botname, firebase_secret, mirror_to_firebase=True)
             
             # Logs ausgeben
             print(ergebnis.get("logs", []))
@@ -2705,7 +2705,7 @@ def webhook():
             time.sleep(1.5)
             logs.append(f"Market-Order Antwort: {order_response}")
             
-            cycle_started_set(bot_nr, firebase_secret, True, mirror_to_firebase=True)
+            cycle_started_set(botname, firebase_secret, True, mirror_to_firebase=True)
 
             if not order_response or order_response.get("code") != 0:
                 status_fuer_alle[botname] = "Fehler"
