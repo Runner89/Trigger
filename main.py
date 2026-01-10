@@ -1351,18 +1351,7 @@ def webhook():
                     current_bo = 0.0
                 naechste_bo[bot_nr] = current_bo
                         
-                
-            print("DEBUG cycle RAM raw:", cycle_started.get(int(bot_nr), "MISSING"))
-            print("DEBUG cycle firebase url:", f"{FIREBASE_URL}/cycleStarted/{int(bot_nr)}.json?auth=***")
-            try:
-                url = f"{FIREBASE_URL}/cycleStarted/{int(bot_nr)}.json?auth={firebase_secret}"
-                r = requests.get(url, timeout=5)
-                print("DEBUG cycle firebase status:", r.status_code)
-                print("DEBUG cycle firebase body:", r.text[:200])
-            except Exception as e:
-                print("DEBUG cycle firebase exception:", e)
-            
-            print("DEBUG cycle_started_get returns:", cycle_started_get(bot_nr, firebase_secret))                   
+           
             #if not naechste_bo_missing_ram_then_firebase(bot_nr, firebase_secret, naechste_bo):
             if cycle_started_get(bot_nr, firebase_secret):
                 
@@ -1478,12 +1467,26 @@ def webhook():
                     print(f"Fehler beim Löschen von Kaufpreisen/Ordergrößen für {botname}: {e}")
     
              # **Hier ein Response zurückgeben**
+            cycle_val = cycle_started_get(bot_nr, firebase_secret)
+
+
             return jsonify({
                 "status": "position_closed",
                 "botname": botname,
+                "debug": {
+                    "bot_nr": int(bot_nr),
+                    "cycle_started_get": cycle_val,
+                    "cycle_ram": cycle_started.get(int(bot_nr), None),
+                    "naechste_bo_ram": naechste_bo.get(int(bot_nr), None),
+                    "firebase_paths": {
+                        "cycleStarted": f"cycleStarted/{int(bot_nr)}",
+                        "naechsteBO": f"naechsteBO/{int(bot_nr)}"
+                    }
+                },
                 "logs": ergebnis.get("logs", []),
                 "result": ergebnis.get("result", None)
-            })  # <-- alle Klammern geschlossen
+            })
+            
         else:
 
 
