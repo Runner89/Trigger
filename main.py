@@ -1479,7 +1479,7 @@ def webhook():
                     "bot_nr": int(bot_nr),
                     "cycle_before_clear": cycle_before,
                     "cycle_after_clear": cycle_started_get(bot_nr, firebase_secret),
-                    "cycle_ram_after_clear": cycle_started.get(int(bot_nr), None)
+                    "cycle_ram_after_clear": cycle_started.get(int(bot_nr), None),
                     "naechste_bo_ram": naechste_bo.get(int(bot_nr), None),
                     "firebase_paths": {
                         "cycleStarted": f"cycleStarted/{int(bot_nr)}",
