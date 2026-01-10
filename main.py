@@ -1383,13 +1383,18 @@ def webhook():
     
                     last_net_profit_Anteil = (bo_factor * (last_net_profit / 3.0)) / 100
                     
-    
-                # ✅ Update berechnen (Variante A) + Untergrenze absichern
-                new_bo = naechste_bo[bot_nr] + last_net_profit_Anteil
+                raw_new_bo = naechste_bo[bot_nr] + last_net_profit_Anteil
+                
+                new_bo = raw_new_bo
                 if new_bo < 2.15:
                     new_bo = 0.015
                 
                 naechste_bo[bot_nr] = new_bo
+
+                debug_naechste_before = naechste_bo[bot_nr]
+                debug_last_net_profit_anteil = last_net_profit_Anteil
+                debug_raw_new_bo = raw_new_bo
+                debug_new_bo_after_clamp = new_bo
     
                 print("Letzter NetProfit:", last_net_profit)
                 print("Anteil:", last_net_profit_Anteil)
@@ -1477,17 +1482,22 @@ def webhook():
                 "botname": botname,
                 "debug": {
                     "bot_nr": int(bot_nr),
+            
                     "cycle_before_clear": cycle_before,
                     "cycle_after_clear": cycle_started_get(bot_nr, firebase_secret),
-                    "cycle_ram_after_clear": cycle_started.get(int(bot_nr), None),
-                    "naechste_bo_ram": naechste_bo.get(int(bot_nr), None),
+            
+                    "naechste_before": debug_naechste_before,
+                    "last_net_profit_anteil": debug_last_net_profit_anteil,
+                    "raw_new_bo": debug_raw_new_bo,
+                    "new_bo_after_clamp": debug_new_bo_after_clamp,
+            
+                    "naechste_bo_ram_after": naechste_bo.get(int(bot_nr), None),
+            
                     "firebase_paths": {
                         "cycleStarted": f"cycleStarted/{int(bot_nr)}",
                         "naechsteBO": f"naechsteBO/{int(bot_nr)}"
                     }
-                },
-                "logs": ergebnis.get("logs", []),
-                "result": ergebnis.get("result", None)
+                }
             })
             
         else:
