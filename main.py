@@ -1355,6 +1355,12 @@ def webhook():
            
             #if not naechste_bo_missing_ram_then_firebase(bot_nr, firebase_secret, naechste_bo):
             #if cycle_started_get(bot_nr, firebase_secret):
+
+            debug_naechste_before = None
+            debug_last_net_profit_anteil = None
+            debug_raw_new_bo = None
+            debug_new_bo_after_clamp = None
+            
             if cycle_before:
                 
                 response = get_last_netprofit_for_side(
