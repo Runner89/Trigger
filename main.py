@@ -1512,7 +1512,7 @@ def webhook():
                     "naechste_bo_ram_after": naechste_bo.get(int(bot_nr), None),
             
                     "firebase_paths": {
-                        "cycleStarted": f"cycleStarted/{botname)}",
+                        "cycleStarted": f"cycleStarted/{botname}",
                         "naechsteBO": f"naechsteBO/{botname}"
                     }
                 }
