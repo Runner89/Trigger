@@ -1388,7 +1388,7 @@ def webhook():
                 if new_bo < 2.15:
                     new_bo = 0.015
                 
-                #naechste_bo[bot_nr] = new_bo
+                naechste_bo[bot_nr] = new_bo
     
                 print("Letzter NetProfit:", last_net_profit)
                 print("Anteil:", last_net_profit_Anteil)
@@ -2635,6 +2635,7 @@ def webhook():
             logs.append(SHORT_firebase_speichere_ordergroesse(botname, usdt_amount, firebase_secret))
             time.sleep(1.5)
             logs.append(f"Market-Order Antwort: {order_response}")
+            
             cycle_started_set(bot_nr, firebase_secret, True, mirror_to_firebase=True)
 
             if not order_response or order_response.get("code") != 0:
