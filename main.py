@@ -1383,13 +1383,13 @@ def webhook():
     
                     last_net_profit_Anteil = (bo_factor * (last_net_profit / 3.0)) / 100
                     
-                raw_new_bo = BO1 + naechste_bo[bot_nr] + last_net_profit_Anteil
+                raw_new_bo = naechste_bo[bot_nr] + last_net_profit_Anteil
                 
-                new_bo = raw_new_bo
+                new_bo = BO1 + raw_new_bo
                 if new_bo < 0.15:
                     new_bo = 0.15
                 
-                naechste_bo[bot_nr] = new_bo
+                naechste_bo[bot_nr] = raw_new_bo
 
                 debug_naechste_before = naechste_bo[bot_nr]
                 debug_last_net_profit_anteil = last_net_profit_Anteil
