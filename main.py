@@ -1350,10 +1350,12 @@ def webhook():
                 else:
                     current_bo = 0.0
                 naechste_bo[bot_nr] = current_bo
-                        
+
+            cycle_before = cycle_started_get(bot_nr, firebase_secret)
            
             #if not naechste_bo_missing_ram_then_firebase(bot_nr, firebase_secret, naechste_bo):
-            if cycle_started_get(bot_nr, firebase_secret):
+            #if cycle_started_get(bot_nr, firebase_secret):
+            if cycle_before:
                 
                 response = get_last_netprofit_for_side(
                     api_key=api_key,
@@ -1475,8 +1477,9 @@ def webhook():
                 "botname": botname,
                 "debug": {
                     "bot_nr": int(bot_nr),
-                    "cycle_started_get": cycle_val,
-                    "cycle_ram": cycle_started.get(int(bot_nr), None),
+                    "cycle_before_clear": cycle_before,
+                    "cycle_after_clear": cycle_started_get(bot_nr, firebase_secret),
+                    "cycle_ram_after_clear": cycle_started.get(int(bot_nr), None)
                     "naechste_bo_ram": naechste_bo.get(int(bot_nr), None),
                     "firebase_paths": {
                         "cycleStarted": f"cycleStarted/{int(bot_nr)}",
