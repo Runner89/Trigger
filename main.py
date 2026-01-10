@@ -1,7 +1,7 @@
-#31.12.2025
-#nicht vyn
+#10.01.2026
+#
 
-##### WICHTIG: In Firebase darf vor dem Start unter naechste_bo/bot_nr nichts stehen, als die bot_nr löschen
+##### WICHTIG: In Firebase darf vor dem Start unter naechste_bo/bot_nr nichts stehen, also die bot_nr löschen
 ##### Bei der allerersten Baseorder kommt jeweils eine Telegramm Meldung, "BO-Grösse konnte nicht gelesen werden". Diese kann ignoriert werden.
 
 #minimale Margin beträgt USDT 0.15 BO1 + Zuwachs
