@@ -2,8 +2,9 @@
 #nicht vyn
 
 ##### WICHTIG: In Firebase darf vor dem Start unter naechste_bo/bot_nr nichts stehen, als die bot_nr löschen
-##### Bei der allerersten Baseorder kommt jeweils eine Telegramm Meldung, welche aber ignoriert werden kann. 
+##### Bei der allerersten Baseorder kommt jeweils eine Telegramm Meldung, "BO-Grösse konnte nicht gelesen werden". Diese kann ignoriert werden.
 
+#minimale Margin beträgt USDT 0.15 BO1 + Zuwachs
 
 #Bei Verlust eines Trades wird kein Anteil abgezogen, sondern bleibt gleich
 
@@ -2273,15 +2274,26 @@ def webhook():
             
             if current_bo is None:
                 fb_value = firebase_lese_naechste_bo(bot_nr, firebase_secret)
-                if fb_value is not None and float(fb_value) != 0:
-                    current_bo = float(fb_value)
-                    naechste_bo[bot_nr] = current_bo
- 
+                if fb_value is not None:
+                    current_bo = float(fb_value)   # auch 0 übernehmen
+                else:
+                    current_bo = 0.0
+                naechste_bo[bot_nr] = current_bo
+
+            cycle_before = cycle_started_get(bot_nr, firebase_secret)
+           
+            #if not naechste_bo_missing_ram_then_firebase(bot_nr, firebase_secret, naechste_bo):
+            #if cycle_started_get(bot_nr, firebase_secret):
+
+            raw_new_bo = None
+            new_bo = None
+            debug_naechste_before = None
+            debug_last_net_profit_anteil = None
+            debug_raw_new_bo = None
+            debug_new_bo_after_clamp = None
             
+            if cycle_before:
                 
-                                
-            if cycle_started_get(bot_nr, firebase_secret):
-            
                 response = get_last_netprofit_for_side(
                     api_key=api_key,
                     secret_key=secret_key,
@@ -2308,13 +2320,34 @@ def webhook():
     
                     last_net_profit_Anteil = (bo_factor * (last_net_profit / 3.0)) / 100
                     
-    
-                # ✅ Update berechnen (Variante A) + Untergrenze absichern
-                new_bo = naechste_bo[bot_nr] + last_net_profit_Anteil
-                if new_bo < 2.15:
-                    new_bo = 0.015
+                #nraw_new_bo = naechste_bo[bot_nr] + last_net_profit_Anteil
                 
-                naechste_bo[bot_nr] = new_bo
+                #new_bo = BO1 + raw_new_bo
+                #nif new_bo < 0.15:
+                 #n   new_bo = 0.15
+                 #n   naechste_bo[bot_nr] = new_bo
+                #nelse:               
+                #n    naechste_bo[bot_nr] = raw_new_bo
+
+
+                raw_growth = naechste_bo[bot_nr] + last_net_profit_Anteil
+
+                new_bo = BO1 + raw_growth
+                
+                if new_bo < 0.15:
+                    new_bo = 0.15
+                
+                growth = new_bo - BO1          # zurück in "Zuwachs"-Einheiten
+                if growth < 0:
+                    growth = 0.0
+                
+                naechste_bo[bot_nr] = growth
+                
+
+                debug_naechste_before = naechste_bo[bot_nr]
+                debug_last_net_profit_anteil = last_net_profit_Anteil
+                debug_raw_new_bo = raw_new_bo
+                debug_new_bo_after_clamp = new_bo
     
                 print("Letzter NetProfit:", last_net_profit)
                 print("Anteil:", last_net_profit_Anteil)
@@ -2324,9 +2357,9 @@ def webhook():
                     bot_nr,
                     float(naechste_bo[bot_nr]),
                     firebase_secret
-                )      
+                )  
                 
-            cycle_started_clear(bot_nr, firebase_secret, mirror_to_firebase=True)        
+            cycle_started_clear(bot_nr, firebase_secret, mirror_to_firebase=True)
             
             # Logs ausgeben
             print(ergebnis.get("logs", []))
