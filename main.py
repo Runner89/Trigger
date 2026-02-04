@@ -1,4 +1,4 @@
-#10.01.2026
+#04.02.2026
 #
 
 ##### WICHTIG: In Firebase darf vor dem Start unter naechste_bo/bot_nr nichts stehen, also die bot_nr löschen
@@ -52,6 +52,7 @@
 #    "sicherheit": 96, Sicherheit muss nicht mal Hebel gerechnet werden, wird im Code gemacht
 #    "usdt_factor": 1.4,
 #    "pnl": 1.4, simulierter Gewinn/Verlust
+#    "Gewinngeteilt": 2, Gewinn wird geteilt durch x
 #    "BO1": 0.2, wie viel beträgt zu Beginn die Margin der aller ersten Base Order (Gewinn wird immer fortlaufend anteilsmässig dazuaddiert)
 #    "RTBO": 45, wie viel beträgt zu Beginn die Margin beim Recovery Trade (Gewinn wird immer fortlaufend anteilsmässig dazuaddiert)
 #    "bo_factor": 0.001, Faktor Verhältnis BO zum benötigten Guthaben für alle SOs
@@ -1307,6 +1308,7 @@ def webhook():
         firebase_secret = data.get("RENDER", {}).get("FIREBASE_SECRET")    #data.get("FIREBASE_SECRET")
         price_from_webhook = data.get("RENDER", {}).get("price")    #data.get("price")
         pnl = float(data.get("RENDER", {}).get("pnl", 0)) 
+        Gewinngeteilt = float(data.get("RENDER", {}).get("Gewinngeteilt", 2)) 
         BO1 = float(data.get("RENDER", {}).get("BO1", 0))    
         RTBO = float(data.get("RENDER", {}).get("RTBO", 0))  
         usdt_factor = float(data.get("RENDER", {}).get("usdt_factor", 1)) 
@@ -1390,7 +1392,7 @@ def webhook():
                 else:
                     last_net_profit = float(last_net_profit)
     
-                    last_net_profit_Anteil = (bo_factor * (last_net_profit / 3.0)) / 100
+                    last_net_profit_Anteil = (bo_factor * (last_net_profit / Gewinngeteilt)) / 100
                     
                 # Zuwachs fortschreiben (anteilsmässig addieren / subtrahieren)
                 raw_growth = naechste_bo[bot_nr] + last_net_profit_Anteil
@@ -2311,7 +2313,7 @@ def webhook():
                 else:
                     last_net_profit = float(last_net_profit)
     
-                    last_net_profit_Anteil = (bo_factor * (last_net_profit / 3.0)) / 100
+                    last_net_profit_Anteil = (bo_factor * (last_net_profit / Gewinngeteilt)) / 100
                     
                 # Zuwachs fortschreiben (anteilsmässig addieren / subtrahieren)
                 raw_growth = naechste_bo[bot_nr] + last_net_profit_Anteil
